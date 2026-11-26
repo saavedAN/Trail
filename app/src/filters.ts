@@ -11,11 +11,13 @@ export type Filters = {
   has: Set<FeatureKind>;
   type: "any" | "loop" | "out-and-back";
   maxDrive: number; // straight-line miles from you; 0 = any
+  noFee: boolean; // no entrance or parking fee
+  freeCamping: boolean;
   sort: SortKey;
 };
 
 export const defaultFilters = (): Filters => ({
-  text: "", difficulty: new Set(), maxLength: 0, maxGain: 0, has: new Set(), type: "any", maxDrive: 0, sort: "distance",
+  text: "", difficulty: new Set(), maxLength: 0, maxGain: 0, has: new Set(), type: "any", maxDrive: 0, noFee: false, freeCamping: false, sort: "distance",
 });
 
 export const FILTERABLE: FeatureKind[] = ["waterfall", "viewpoint", "peak", "water", "campsite", "shelter"];
@@ -33,6 +35,8 @@ export function applyFilters(all: TrailSummary[], f: Filters, me: LonLat | null)
       if (f.maxGain && t.gainFt > f.maxGain) return false;
       if (f.type !== "any" && t.type !== f.type) return false;
       for (const k of f.has) if (!(t.counts[k] || t.dest === k)) return false;
+      if (f.noFee && (t.fee === "entrance" || t.fee === "parking")) return false;
+      if (f.freeCamping && !t.freeCamping) return false;
       if (f.maxDrive && me && (dist(t) ?? 0) > f.maxDrive) return false;
       return true;
     })

@@ -3,6 +3,7 @@ import nearestPointOnLine from "@turf/nearest-point-on-line";
 import { lineString, point } from "@turf/helpers";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getSaved, loadTrail, putSaved, type Saved } from "./data";
+import { Conditions } from "./Conditions";
 import { ElevationChart } from "./ElevationChart";
 import { usePosition } from "./geo";
 import { createMap } from "./mapStyle";
@@ -135,9 +136,11 @@ export function TrailPage({ id }: { id: string }) {
           </button>
         </div>
 
+        <Conditions trail={trail} />
+
         <h2>Parking</h2>
         <p>
-          {trail.parking.name ?? "Trailhead parking"} ·{" "}
+          {trail.parking.name ?? "Trailhead parking"}{feeText(trail.fee)} ·{" "}
           <a href={`https://maps.apple.com/?daddr=${trail.parking.lat},${trail.parking.lon}`} target="_blank" rel="noreferrer">Directions</a>
         </p>
 
@@ -199,4 +202,8 @@ function popup(title: string, info?: string) {
     el.append(d);
   }
   return el;
+}
+
+function feeText(fee: TrailDetail["fee"]) {
+  return fee === "entrance" ? " · park entrance fee" : fee === "parking" ? " · paid parking" : fee === "free" ? " · free" : "";
 }

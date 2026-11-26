@@ -1,7 +1,7 @@
 // Download everything a trail needs to work with no signal: its data, the map tiles around it,
 // the elevation tiles (for hillshade, contours) and the map's fonts and icons.
 import { DATA_CACHE, putSaved, trailUrl } from "./data";
-import { DEM_MAXZOOM, DEM_URL, STYLE_URL, VECTOR_MAXZOOM } from "./mapStyle";
+import { DEM_MAXZOOM, DEM_URL, SAT_MAXZOOM, SAT_URL, STYLE_URL, VECTOR_MAXZOOM } from "./mapStyle";
 import type { TrailDetail } from "./types";
 
 export const TILE_CACHE = "trail-tiles-v1";
@@ -52,6 +52,9 @@ export async function downloadTrail(trail: TrailDetail, onProgress: (done: numbe
   const { urls, vectorTemplate } = await styleAssets();
   for (let z = MIN_Z; z <= DEM_MAXZOOM; z++)
     for (const [x, y] of tilesFor(trail.bbox, z)) urls.push(DEM_URL.replace("{z}", `${z}`).replace("{x}", `${x}`).replace("{y}", `${y}`));
+  // Satellite from zoom 11 up (wider views are just a blur of green and not worth the space).
+  for (let z = 11; z <= SAT_MAXZOOM; z++)
+    for (const [x, y] of tilesFor(trail.bbox, z)) urls.push(SAT_URL.replace("{z}", `${z}`).replace("{x}", `${x}`).replace("{y}", `${y}`));
   if (vectorTemplate)
     for (let z = MIN_Z; z <= VECTOR_MAXZOOM; z++)
       for (const [x, y] of tilesFor(trail.bbox, z)) urls.push(vectorTemplate.replace("{z}", `${z}`).replace("{x}", `${x}`).replace("{y}", `${y}`));

@@ -7,6 +7,11 @@ export const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 export const DEM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
 export const DEM_MAXZOOM = 13;
 export const VECTOR_MAXZOOM = 14;
+// Satellite: USGS National Map imagery (public domain, US only).
+export const SAT_URL = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}";
+export const SAT_MAXZOOM = 16;
+const SAT_PREF = "satellite";
+const satOn = () => { try { return localStorage.getItem(SAT_PREF) === "1"; } catch { return false; } };
 
 // Contours are computed in the browser from the elevation tiles. Fetching on the main thread
 // (worker: false) keeps every request visible to the service worker, so they work offline.
@@ -29,13 +34,50 @@ export function createMap(container: HTMLElement, opts: Partial<maplibregl.MapOp
     attributionControl: { compact: true },
     ...opts,
   });
-  map.on("style.load", () => addTopo(map));
+  map.on("style.load", () => { addSatellite(map); addTopo(map); });
+  map.addControl(new SatelliteToggle(), "top-right");
   // No signal and no cached base map: fall back to a plain background so trails, features and GPS still show.
   map.once("error", (e) => {
     const url = (e.error as { url?: string } | undefined)?.url ?? "";
     if (url.startsWith(STYLE_URL) && !map.isStyleLoaded()) map.setStyle(FALLBACK_STYLE);
   });
   return map;
+}
+
+/** Satellite imagery under the labels, hidden until switched on. */
+function addSatellite(map: MlMap) {
+  if (map.getSource("satellite")) return;
+  const firstSymbol = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
+  map.addSource("satellite", { type: "raster", tiles: [SAT_URL], tileSize: 256, maxzoom: SAT_MAXZOOM, attribution: "Imagery: USGS" });
+  map.addLayer({ id: "satellite", type: "raster", source: "satellite", layout: { visibility: satOn() ? "visible" : "none" } }, firstSymbol);
+}
+
+/** Map button that switches between the topo map and satellite imagery. */
+class SatelliteToggle implements maplibregl.IControl {
+  private map?: MlMap;
+  private btn = document.createElement("button");
+  onAdd(map: MlMap) {
+    this.map = map;
+    const box = document.createElement("div");
+    box.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    this.btn.type = "button";
+    this.btn.className = "sat-toggle";
+    this.btn.onclick = () => this.set(!satOn());
+    this.paint();
+    box.append(this.btn);
+    return box;
+  }
+  onRemove() { this.btn.parentElement?.remove(); }
+  private set(on: boolean) {
+    try { localStorage.setItem(SAT_PREF, on ? "1" : "0"); } catch { /* private mode */ }
+    if (this.map?.getLayer("satellite")) this.map.setLayoutProperty("satellite", "visibility", on ? "visible" : "none");
+    this.paint();
+  }
+  private paint() {
+    const on = satOn();
+    this.btn.textContent = on ? "Map" : "Sat";
+    this.btn.title = this.btn.ariaLabel = on ? "Show topo map" : "Show satellite";
+  }
 }
 
 /** Hillshade + contour lines (40 ft, bold every 200 ft) so the street map reads like a topo map. */
