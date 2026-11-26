@@ -18,6 +18,7 @@ export function TrailPage({ id }: { id: string }) {
   const [saved, setSaved] = useState<Saved | null>(null);
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const [hidden, setHidden] = useState<Set<FeatureKind>>(new Set());
+  const [full, setFull] = useState(false);
   const pos = usePosition();
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
@@ -62,6 +63,9 @@ export function TrailPage({ id }: { id: string }) {
     cursor.current = new maplibregl.Marker({ element: el });
     return () => { markers.current = []; m.remove(); map.current = null; };
   }, [trail]);
+
+  // Full screen map: resize the map to its new box (iPhone Safari has no real fullscreen for maps).
+  useEffect(() => { requestAnimationFrame(() => map.current?.resize()); }, [full]);
 
   // Feature toggles.
   useEffect(() => {
@@ -108,7 +112,9 @@ export function TrailPage({ id }: { id: string }) {
 
   return (
     <div className="trail">
-      <div className="trail-map" ref={mapEl} />
+      <div className={`trail-map ${full ? "full" : ""}`} ref={mapEl}>
+        <button className="map-full" onClick={() => setFull(!full)} aria-label={full ? "Exit full screen" : "Full screen map"}>{full ? "✕" : "⛶"}</button>
+      </div>
       <div className="trail-body">
         <button className="back" onClick={() => history.back()}>‹ Back</button>
         <h1>{trail.name}</h1>
@@ -141,7 +147,7 @@ export function TrailPage({ id }: { id: string }) {
         <h2>Parking</h2>
         <p>
           {trail.parking.name ?? "Trailhead parking"}{feeText(trail.fee)} ·{" "}
-          <a href={`https://maps.apple.com/?daddr=${trail.parking.lat},${trail.parking.lon}`} target="_blank" rel="noreferrer">Directions</a>
+          <a href={`https://www.google.com/maps/dir/?api=1&destination=${trail.parking.lat},${trail.parking.lon}`} target="_blank" rel="noreferrer">Directions</a>
         </p>
 
         <h2>Camping &amp; shelters</h2>

@@ -160,3 +160,7 @@ main { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .alerts p { margin: 6px 0; font-weight: normal; white-space: pre-line; }
 .alert-src { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 4px; }
 .sat-toggle { font-size: 11px !important; font-weight: 700; width: 29px; color: #1f2a1f !important; }
+
+/* Full screen trail map */
+.trail-map.full { position: fixed; inset: 0; height: auto; z-index: 50; }
+.map-full { position: absolute; z-index: 5; left: 10px; top: calc(10px + env(safe-area-inset-top)); width: 36px; height: 36px; border-radius: 8px; border: 0; background: #fff; color: #1f2a1f; font-size: 18px; box-shadow: 0 0 0 2px rgb(0 0 0 / .1); cursor: pointer; }
