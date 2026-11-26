@@ -143,6 +143,7 @@ async function main() {
     const h = curated(def, net, pois, lotAt);
     if (typeof h === "string") { problems.push(`${def.name}: ${h}`); continue; }
     hikes.push(h);
+    def.via.forEach((v) => curatedDest.add(v));
   }
 
   // 2. Automatic hikes: nearest lot (by walking) to each named destination.
@@ -175,7 +176,7 @@ async function main() {
     }
     const route = toRoute(net, [...r.path].reverse(), [...r.edges].reverse());
     const m = route.trailM + route.roadM;
-    if (m < MIN_ONE_WAY_M) { why(d, "roadside (too short)"); continue; }
+    if (m < (d.kind === "waterfall" ? 150 : MIN_ONE_WAY_M)) { why(d, "roadside (too short)"); continue; }
     if (route.trailM < m * 0.6) { why(d, "mostly road walking"); continue; }
     const lot = lotAt.get(r.node) ?? trailheadAt.get(r.node);
     const parking = lot
@@ -192,7 +193,8 @@ async function main() {
   const kept: Hike[] = [];
   for (const h of auto) {
     const end = h.route.coords.at(-1)!;
-    const covered = kept.some((k) => k.parking.lon === h.parking.lon && k.parking.lat === h.parking.lat &&
+    // Only viewpoints get folded into another hike; named falls, peaks and landmarks keep their own entry.
+    const covered = h.dest === "viewpoint" && kept.some((k) => k.parking.lon === h.parking.lon && k.parking.lat === h.parking.lat &&
       k.route.coords.some((c, i) => i % 3 === 0 && haversine(c[0], c[1], end[0], end[1]) < 120));
     if (covered && watch.test(h.name)) console.log(`  ${h.name} is on another hike from the same lot`);
     const dupName = kept.some((k) => k.name === h.name && haversine(k.route.coords.at(-1)![0], k.route.coords.at(-1)![1], end[0], end[1]) < 2000);

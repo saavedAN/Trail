@@ -31,6 +31,9 @@ export const REGIONS: Record<string, Region> = {
     hikes: [
       { id: "old-rag-loop", name: "Old Rag Loop", type: "loop", parking: /old rag lower lot/i, via: ["Old Rag Mountain"] },
       { id: "stony-man-loop", name: "Stony Man via Appalachian Trail", type: "loop", parking: /stony man/i, via: ["Stony Man"] },
+      { id: "mcafee-knob", name: "McAfee Knob", type: "out-and-back", parking: /mcafee/i, via: ["McAfee Knob"] },
+      { id: "dragons-tooth", name: "Dragon's Tooth", type: "out-and-back", parking: /dragon/i, via: ["Dragon's Tooth"] },
+      { id: "tinker-cliffs", name: "Tinker Cliffs via Andy Layne Trail", type: "out-and-back", parking: /andy layne/i, via: ["Tinker Cliffs"] },
       { id: "bearfence-loop", name: "Bearfence Mountain Loop", type: "loop", parking: /bearfence/i, via: ["Bearfence Mountain"] },
     ],
   },
