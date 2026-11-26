@@ -16,7 +16,7 @@ export type OsmElement = {
   tags?: Record<string, string>;
 };
 
-const OVERPASS = "https://overpass-api.de/api/interpreter";
+const SERVERS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 const CACHE_DIR = path.resolve(import.meta.dirname, "../.cache/osm");
 
 function query(b: BBox): string {
@@ -43,13 +43,25 @@ function query(b: BBox): string {
 export async function fetchOsm(name: string, bbox: BBox): Promise<OsmElement[]> {
   const file = path.join(CACHE_DIR, `${name}.json`);
   if (existsSync(file)) return JSON.parse(await readFile(file, "utf8")).elements;
-  const res = await fetch(OVERPASS, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "personal-trail-app/0.1" },
-    body: new URLSearchParams({ data: query(bbox) }),
-  });
-  if (!res.ok) throw new Error(`Overpass HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const json = await res.json();
+  let json: { elements: OsmElement[] } | undefined;
+  // Public Overpass servers get busy: try each server, backing off between rounds.
+  for (let attempt = 0; attempt < 4 && !json; attempt++) {
+    for (const url of SERVERS) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "personal-trail-app/0.1" },
+          body: new URLSearchParams({ data: query(bbox) }),
+        });
+        if (res.ok) { json = await res.json(); break; }
+        console.warn(`${url}: HTTP ${res.status}`);
+      } catch (e) {
+        console.warn(`${url}: ${(e as Error).message}`);
+      }
+    }
+    if (!json) await new Promise((r) => setTimeout(r, 15000 * 2 ** attempt));
+  }
+  if (!json) throw new Error("All Overpass servers failed");
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(file, JSON.stringify(json));
   return json.elements;
