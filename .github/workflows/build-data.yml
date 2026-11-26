@@ -47,11 +47,13 @@ jobs:
           mkdir -p osm && cd osm
           curl -fsSLO https://download.geofabrik.de/north-america/us/virginia-latest.osm.pbf
           curl -fsSLO https://download.geofabrik.de/north-america/us/west-virginia-latest.osm.pbf
+          # Kentucky only so Jefferson National Forest's boundary (which crosses into KY) is complete.
+          curl -fsSLO https://download.geofabrik.de/north-america/us/kentucky-latest.osm.pbf
           ls -lh
       - name: Filter to trails, roads to trailheads, and trail features
         working-directory: osm
         run: |
-          osmium merge virginia-latest.osm.pbf west-virginia-latest.osm.pbf -o merged.pbf --overwrite
+          osmium merge virginia-latest.osm.pbf west-virginia-latest.osm.pbf kentucky-latest.osm.pbf -o merged.pbf --overwrite
           osmium extract -s smart -S types=multipolygon,boundary -b "$BBOX" merged.pbf -o box.pbf --overwrite
           osmium tags-filter box.pbf \
             w/highway=path,footway,track,bridleway,steps,cycleway,service,unclassified,tertiary,residential,secondary,primary \
@@ -59,7 +61,7 @@ jobs:
             nwr/tourism=camp_site,camp_pitch,wilderness_hut,alpine_hut,viewpoint,attraction \
             nwr/natural=peak,spring,cave_entrance,cliff,rock,arch \
             nwr/waterway=waterfall nwr/man_made=water_tap n/highway=trailhead \
-            wr/boundary=national_park,protected_area wr/leisure=nature_reserve \
+            wr/boundary=national_park,protected_area,national_forest wr/leisure=nature_reserve \
             -o filtered.pbf --overwrite
           osmium export filtered.pbf -f geojsonseq -a type,id -o region.geojsonseq --overwrite
           ls -lh

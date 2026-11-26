@@ -26,7 +26,7 @@ export const REGIONS: Record<string, Region> = {
   virginia: {
     // The Virginia AT corridor (Damascus to Harpers Ferry) and everything within ~3 hours of Blacksburg.
     name: "Virginia & West Virginia highlands",
-    extracts: ["north-america/us/virginia-latest.osm.pbf", "north-america/us/west-virginia-latest.osm.pbf"],
+    extracts: ["north-america/us/virginia-latest.osm.pbf", "north-america/us/west-virginia-latest.osm.pbf", "north-america/us/kentucky-latest.osm.pbf"],
     bbox: [-83.7, 36.5, -77.6, 39.35],
     hikes: [
       { id: "old-rag-loop", name: "Old Rag Loop", type: "loop", parking: /old rag lower lot/i, via: ["Old Rag Mountain"] },

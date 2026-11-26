@@ -126,8 +126,8 @@ async function main() {
   console.time("load");
   const { net, pois, areas } = await load(file, region.bbox);
   console.log(`${areas.length} parks and forests`);
-  const forests = [...new Set(areas.map((a) => a.name).filter((n) => /national (forest|park)|state park/i.test(n)))];
-  console.log(`  e.g. ${forests.slice(0, 25).join("; ")}`);
+  const forests = [...new Set(areas.map((a) => a.name).filter((n) => /national (forest|park|scenic)|wilderness/i.test(n)))];
+  console.log(`  federal lands: ${forests.join("; ")}`);
   // All named areas containing a point, smallest first.
   const areasAt = (lon: number, lat: number) => {
     const hits: Area[] = [];

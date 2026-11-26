@@ -38,7 +38,7 @@ export type Area = { name: string; kind: string; shape: Feature<Polygon | MultiP
 /** Parks, forests and wilderness areas, from boundary/leisure polygons. */
 export function areaFrom(f: Feature, t: Record<string, string>): Area | null {
   if (!t.name || (f.geometry?.type !== "Polygon" && f.geometry?.type !== "MultiPolygon")) return null;
-  const isArea = t.boundary === "national_park" || t.boundary === "protected_area" || t.leisure === "nature_reserve" || t.leisure === "park";
+  const isArea = t.boundary === "national_park" || t.boundary === "protected_area" || t.boundary === "national_forest" || t.leisure === "nature_reserve" || t.leisure === "park";
   if (!isArea) return null;
   const shape = f as Feature<Polygon | MultiPolygon>;
   return { name: t.name, kind: t.protect_class ?? t.boundary ?? t.leisure ?? "", shape, area: turf.area(shape) };
