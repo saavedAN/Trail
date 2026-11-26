@@ -52,18 +52,21 @@ const RULES: [RegExp, string][] = [
   [/state park/i, "State park: camping only in park campgrounds or designated backcountry sites; fee and reservations (reservevaparks.com in VA)."],
   [/state forest/i, "State forest: camping usually by permit or at designated sites only."],
   [/appalachian national scenic trail/i, "Appalachian Trail corridor: camp only at the shelters and designated campsites along the AT; free, first come, first served."],
-  [/wildlife management area/i, "Wildlife management area: primitive camping allowed in some WMAs with an access permit; check DWR rules."],
   [/wilderness/i, "Wilderness area (national forest): free dispersed camping; groups of 10 or fewer, no motorized gear."],
   [/national recreation area/i, "National recreation area (national forest): free dispersed camping in most areas; developed campgrounds charge a fee."],
   [/national forest/i, "National forest: free dispersed camping in most areas (stay 200 ft from water and trails, 14-day limit). Developed campgrounds charge a fee."],
+  // A WMA inside a national forest follows forest rules (matched above); a standalone WMA gets its own.
+  [/wildlife management area/i, "Wildlife management area: primitive camping allowed in some WMAs with an access permit; check DWR rules."],
 ];
 
 /** Picks the area name to show and its camping rule, given containing areas smallest first. */
-export function landFor(names: string[]): { area: string | null; rule: string | null } {
+export function landFor(names: string[], onAT = false): { area: string | null; rule: string | null } {
   for (const [re, rule] of RULES) {
     const hit = names.find((n) => re.test(n));
     if (hit) return { area: hit, rule };
   }
+  // The AT corridor is often mapped only as scattered tracts; a hike that walks the AT follows its rules.
+  if (onAT) return { area: "Appalachian Trail corridor", rule: RULES.find(([re]) => re.test("appalachian national scenic trail"))![1] };
   return { area: names[0] ?? null, rule: null };
 }
 
