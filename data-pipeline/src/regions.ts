@@ -28,12 +28,12 @@ export const REGIONS: Record<string, Region> = {
     hikes: [
       {
         id: "old-rag-loop", name: "Old Rag Loop", type: "loop",
-        parking: /old rag/i, via: ["Old Rag Mountain"],
+        parking: /old rag lower lot/i, via: ["Old Rag Mountain"],
         within: [-78.36, 38.53, -78.25, 38.6],
       },
       {
         id: "whiteoak-canyon", name: "Whiteoak Canyon Upper Falls", type: "out-and-back",
-        parking: /white ?oak.*lower|white ?oak/i, via: ["Upper Whiteoak Falls"],
+        parking: /whiteoak boundary/i, via: ["Upper Whiteoak Falls"],
         within: [-78.4, 38.52, -78.28, 38.6],
       },
       {
