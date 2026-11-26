@@ -7,6 +7,7 @@ import path from "node:path";
 import { fetchOsm, type OsmElement } from "./osm.ts";
 import { statsFor, round, KM_TO_MI, type RouteType, type Stats } from "./stats.ts";
 import { REGIONS, type HikeDef } from "./regions.ts";
+import { elevationAt } from "./elevation.ts";
 
 export type FeatureKind = "parking" | "campsite" | "shelter" | "water" | "viewpoint" | "waterfall" | "peak" | "trailhead" | "toilets" | "landmark";
 
@@ -131,13 +132,31 @@ async function buildHike(def: HikeDef, segs: Segment[], all: Poi[]): Promise<Tra
     }
     parts.push(chain(hits.map((h) => h.coords)));
   }
-  const coords = chain(parts, def.start);
+  let coords = chain(parts, def.start);
+  if (def.startHigh) {
+    const [a, b] = await Promise.all([elevationAt(coords[0][0], coords[0][1]), elevationAt(coords.at(-1)![0], coords.at(-1)![1])]);
+    if (b > a) coords.reverse();
+  }
+  for (const [which, name] of [["start", def.startAt], ["end", def.endAt]] as const) {
+    if (!name) continue;
+    const poi = all.find((p) => p.name === name && inBox([[p.lon, p.lat]], def.within));
+    if (!poi) return `no feature named "${name}" to ${which} at`;
+    const l = turf.lineString(coords);
+    coords = which === "start"
+      ? turf.lineSlice([poi.lon, poi.lat], coords.at(-1)!, l).geometry.coordinates
+      : turf.lineSlice(coords[0], [poi.lon, poi.lat], l).geometry.coordinates;
+  }
   const line = turf.lineString(coords);
   const stats = await statsFor(line, def.type);
   const { profile, ...rest } = stats;
   const features = featuresAlong(line, all, ON_TRAIL, 150);
-  const ends = turf.lineString([coords[0], coords.at(-1)!]);
-  const parking = featuresAlong(ends, all, ["parking", "trailhead"], 500).map((p) => ({ ...p, mi: 0 }));
+  const ends = def.type === "point-to-point" ? [coords[0], coords.at(-1)!] : [coords[0]];
+  const parking: TrailFeature[] = all
+    .filter((p) => p.kind === "parking" || p.kind === "trailhead")
+    .map((p) => ({ p, d: Math.min(...ends.map((e) => dist(e, [p.lon, p.lat]))) }))
+    .filter(({ d }) => d <= 500)
+    .sort((a, b) => a.d - b.d)
+    .map(({ p, d }) => ({ id: p.id, kind: p.kind, name: p.name, lon: p.lon, lat: p.lat, mi: 0, offTrailFt: Math.round(d * 3.28084) }));
   return {
     id: def.id,
     name: def.name,
@@ -202,7 +221,7 @@ function report(name: string, trails: Trail[], problems: string[], all: Poi[]): 
     ...trails.flatMap((t) => [
       `## ${t.name}`,
       "",
-      `Parking: ${t.parking.length ? t.parking.map((p) => `${p.name ?? p.kind} (${p.offTrailFt} ft from trail end)`).join(", ") : "none found within 500 m of the ends"}`,
+      `Parking: ${t.parking.length ? t.parking.map((p) => `${p.name ?? p.kind} (${p.offTrailFt} ft from the start)`).join(", ") : "none mapped within 500 m of the start"}`,
       "",
       ...t.features.map((f) => `- mile ${f.mi.toFixed(1)}: ${f.kind}${f.name ? ` — ${f.name}` : ""}`),
       "",

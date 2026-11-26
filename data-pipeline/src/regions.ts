@@ -13,6 +13,11 @@ export type HikeDef = {
   within?: [number, number, number, number];
   /** Where the hike starts (usually the parking lot), [lon, lat]. */
   start?: Position;
+  /** Start at the higher end (for hikes that begin at Skyline Drive). */
+  startHigh?: boolean;
+  /** Trim the route to start / end at a named feature (e.g. a waterfall). */
+  startAt?: string;
+  endAt?: string;
 };
 
 export type Region = { name: string; bbox: BBox; hikes: HikeDef[] };
@@ -28,14 +33,14 @@ export const REGIONS: Record<string, Region> = {
         within: [-78.36, 38.53, -78.27, 38.59], start: [-78.2866, 38.5705],
       },
       {
-        id: "whiteoak-canyon", name: "Whiteoak Canyon Trail (full)", type: "out-and-back",
+        id: "whiteoak-canyon", name: "Whiteoak Canyon Upper Falls", type: "out-and-back",
         segments: ["Whiteoak Canyon Trail"],
-        within: [-78.4, 38.53, -78.3, 38.6], start: [-78.3722, 38.5627],
+        within: [-78.4, 38.53, -78.3, 38.6], startHigh: true, endAt: "Upper Whiteoak Falls",
       },
       {
         id: "dark-hollow-falls", name: "Dark Hollow Falls", type: "out-and-back",
         segments: ["Dark Hollow Falls Trail"],
-        within: [-78.45, 38.5, -78.4, 38.54], start: [-78.4296, 38.5194],
+        within: [-78.45, 38.5, -78.4, 38.54], startHigh: true, endAt: "Dark Hollow Falls",
       },
       {
         id: "hawksbill-lower", name: "Hawksbill Summit (Lower Hawksbill Trail)", type: "out-and-back",
@@ -55,7 +60,7 @@ export const REGIONS: Record<string, Region> = {
       {
         id: "doyles-river-falls", name: "Doyles River Falls", type: "out-and-back",
         segments: ["Doyles River Trail"],
-        within: [-78.7, 38.22, -78.64, 38.28],
+        within: [-78.7, 38.22, -78.64, 38.28], startHigh: true, endAt: "Lower Doyles River Falls",
       },
     ],
   },
