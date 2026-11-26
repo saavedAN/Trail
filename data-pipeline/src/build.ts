@@ -11,13 +11,14 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { Network, edgeKey, haversine } from "./network.ts";
-import { REGIONS, type HikeDef, type Box } from "./regions.ts";
-import { areaFrom, campInfo, landFor, type Area } from "./camping.ts";
+import { REGIONS, type HikeDef, type Box, type Region } from "./regions.ts";
+import { regionShape } from "./region.ts";
+import { areaFrom, campInfo, landFor, npsPark, type Area } from "./camping.ts";
 import { statsFor, round, KM_TO_MI, type RouteType } from "./stats.ts";
 
 export type FeatureKind = "parking" | "campsite" | "shelter" | "water" | "viewpoint" | "waterfall" | "peak" | "trailhead" | "toilets" | "landmark";
 
-type Poi = { id: string; kind: FeatureKind; name?: string; lon: number; lat: number; info?: string };
+type Poi = { id: string; kind: FeatureKind; name?: string; lon: number; lat: number; info?: string; fee?: string };
 export type TrailFeature = { kind: FeatureKind; name?: string; lon: number; lat: number; mi: number; info?: string };
 
 const MAX_ONE_WAY_M = 13000; // ~8 miles each way
@@ -41,7 +42,9 @@ function kindOf(t: Record<string, string>): FeatureKind | null {
 
 const inBox = (lon: number, lat: number, b: Box) => lon >= b[0] && lon <= b[2] && lat >= b[1] && lat <= b[3];
 
-async function load(file: string, bbox: Box) {
+async function load(file: string, region: Region) {
+  const shape = regionShape(region);
+  const inRegion = (lon: number, lat: number) => inBox(lon, lat, region.bbox) || turf.booleanPointInPolygon([lon, lat], shape);
   const net = new Network();
   const pois: Poi[] = [];
   const areas: Area[] = [];
@@ -58,7 +61,7 @@ async function load(file: string, bbox: Box) {
     const kind = kindOf(t);
     if (kind) {
       const c: number[] = g.type === "Point" ? g.coordinates : turf.centroid(f).geometry.coordinates;
-      if (inBox(c[0], c[1], bbox)) pois.push({ id: `${String(t["@type"] ?? "x")[0]}${t["@id"] ?? pois.length}`, kind, name: t.name, lon: c[0], lat: c[1], info: campInfo(t) });
+      if (inRegion(c[0], c[1])) pois.push({ id: `${String(t["@type"] ?? "x")[0]}${t["@id"] ?? pois.length}`, kind, name: t.name, lon: c[0], lat: c[1], info: campInfo(t), fee: t.fee });
     }
     if (t.highway && g.type === "LineString" && kind === null) net.addWay(g.coordinates, t);
   }
@@ -116,7 +119,7 @@ const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]
 
 type Hike = {
   id: string; name: string; type: RouteType; dest?: FeatureKind; route: Route;
-  parking: { name?: string; lon: number; lat: number };
+  parking: { name?: string; lon: number; lat: number; fee?: string };
 };
 
 async function main() {
@@ -124,7 +127,7 @@ async function main() {
   const region = REGIONS[regionId];
   if (!region || !file) throw new Error("usage: build.ts <region> <export.geojsonseq>");
   console.time("load");
-  const { net, pois, areas } = await load(file, region.bbox);
+  const { net, pois, areas } = await load(file, region);
   console.log(`${areas.length} parks and forests`);
   const forests = [...new Set(areas.map((a) => a.name).filter((n) => /national (forest|park|scenic)|wilderness/i.test(n)))];
   console.log(`  federal lands: ${forests.join("; ")}`);
@@ -199,7 +202,7 @@ async function main() {
     if (route.trailM < m * 0.6) { why(d, "mostly road walking"); continue; }
     const lot = lotAt.get(r.node) ?? trailheadAt.get(r.node);
     const parking = lot
-      ? { name: lot.name, lon: lot.lon, lat: lot.lat }
+      ? { name: lot.name, lon: lot.lon, lat: lot.lat, fee: lot.fee }
       : { name: net.roadName(r.node) ? `Roadside parking, ${net.roadName(r.node)}` : "Roadside parking", lon: net.lon[r.node], lat: net.lat[r.node] };
     auto.push({ id: "", name: d.name!, type: "out-and-back", dest: d.kind, route, parking });
     if (watch.test(d.name!)) console.log(`  built ${d.name}: ${(m / 1609.34).toFixed(1)} mi one way from ${parking.name}`);
@@ -250,9 +253,14 @@ async function main() {
     }
     const inside = [...pooled.values()].sort((x, y) => x.area - y.area);
     if (!inside.length) noArea++;
-    const land = landFor(inside.map((a) => a.name));
+    const names = inside.map((a) => a.name);
+    const land = landFor(names);
+    const park = npsPark(names);
+    const lotFee = h.parking.fee;
+    const fee = park?.entranceFee ? "entrance" : lotFee && lotFee !== "no" ? "parking" : lotFee === "no" ? "free" : null;
+    const freeCamping = /\bfree\b/i.test(land.rule ?? "") || features.some((f) => (f.kind === "campsite" || f.kind === "shelter") && /\bfree\b/.test(f.info ?? ""));
     const summary: Summary = {
-      id, name: h.name, type: h.type, dest: h.dest ?? null, area: land.area, camping: land.rule,
+      id, name: h.name, type: h.type, dest: h.dest ?? null, area: land.area, camping: land.rule, fee, freeCamping, parkCode: park?.code ?? null,
       ...rest, counts, via: h.route.viaNames.slice(0, 4),
       parking: { name: h.parking.name ?? null, lon: round(h.parking.lon, 5), lat: round(h.parking.lat, 5) },
       bbox: turf.bbox(line).map((n) => round(n, 5)),
@@ -295,7 +303,7 @@ function curated(def: HikeDef, net: Network, pois: Poi[], lotAt: Map<number, Poi
     path.push(...(path.length ? r.path.slice(1) : r.path));
     edges.push(...r.edges);
   }
-  return { id: def.id, name: def.name, type: def.type, route: toRoute(net, path, edges), parking: { name: lot.name, lon: lot.lon, lat: lot.lat } };
+  return { id: def.id, name: def.name, type: def.type, route: toRoute(net, path, edges), parking: { name: lot.name, lon: lot.lon, lat: lot.lat, fee: lot.fee } };
 }
 
 async function pool(jobs: (() => Promise<void>)[], n: number) {
@@ -304,7 +312,8 @@ async function pool(jobs: (() => Promise<void>)[], n: number) {
 }
 
 type Summary = {
-  id: string; name: string; type: string; dest: string | null; area: string | null; camping: string | null; lengthMi: number; gainFt: number; lossFt: number; highFt: number; lowFt: number;
+  id: string; name: string; type: string; dest: string | null; area: string | null; camping: string | null;
+  fee: "entrance" | "parking" | "free" | null; freeCamping: boolean; parkCode: string | null; lengthMi: number; gainFt: number; lossFt: number; highFt: number; lowFt: number;
   rating: number; difficulty: string; difficultySimple: string; hours: number; counts: Record<string, number>; via: string[];
   parking: { name: string | null; lon: number; lat: number }; bbox: number[];
 };

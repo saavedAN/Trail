@@ -1,0 +1,18 @@
+name: API check (temporary)
+on:
+  push:
+    branches: [feedback-2]
+    paths: [".github/workflows/api-check.yml"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in "https://api.open-meteo.com/v1/forecast?latitude=37.2&longitude=-80.4&daily=sunset&timezone=auto" \
+                   "https://api.weather.gov/alerts/active?point=37.2,-80.4" \
+                   "https://developer.nps.gov/api/v1/alerts?parkCode=shen&api_key=DEMO_KEY" \
+                   "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/15/12680/9100"; do
+            echo "== $u"
+            curl -s -m 30 -A "Mozilla/5.0" -H "Origin: https://trail.theadrian.org" -D - -o body.bin "$u" | grep -iE "^HTTP|access-control-allow-origin|content-type" || true
+            head -c 400 body.bin | tr -d '\0'; echo
+          done

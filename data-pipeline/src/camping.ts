@@ -66,3 +66,29 @@ export function landFor(names: string[]): { area: string | null; rule: string | 
   }
   return { area: names[0] ?? null, rule: null };
 }
+
+/** National Park Service units in or near the region: code for NPS alerts, and whether they charge entrance. */
+const NPS: [RegExp, string, boolean][] = [
+  [/shenandoah national park/i, "shen", true],
+  [/prince william forest/i, "prwi", true],
+  [/great falls park/i, "grfa", true],
+  [/harpers ferry/i, "hafe", true],
+  [/blue ridge parkway/i, "blri", false],
+  [/new river gorge/i, "neri", false],
+  [/great smoky/i, "grsm", false],
+  [/chesapeake (and|&) ohio canal|c&o canal/i, "choh", false],
+  [/catoctin mountain park/i, "cato", false],
+  [/george washington memorial parkway/i, "gwmp", false],
+  [/manassas national battlefield/i, "mana", true],
+  [/cumberland gap/i, "cuga", false],
+  [/big south fork/i, "biso", false],
+  [/bluestone national scenic river/i, "blue", false],
+  [/gauley river national recreation area/i, "gari", false],
+  [/appalachian national scenic trail/i, "appa", false],
+];
+
+/** The NPS unit a hike is in (the first match, given containing areas smallest first). */
+export function npsPark(names: string[]): { code: string; entranceFee: boolean } | null {
+  for (const [re, code, entranceFee] of NPS) if (names.some((n) => re.test(n))) return { code, entranceFee };
+  return null;
+}
