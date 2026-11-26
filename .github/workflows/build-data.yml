@@ -1,0 +1,52 @@
+name: Build trail data
+
+# Runs the data script on GitHub's servers (they can reach OpenStreetMap)
+# and commits the generated files in data/ back to the same branch.
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: Region to build
+        default: shenandoah
+  push:
+    paths:
+      - "data-pipeline/**"
+      - ".github/workflows/build-data.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-data-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: data-pipeline/package-lock.json
+      - name: Cache downloaded elevation tiles
+        uses: actions/cache@v4
+        with:
+          path: data-pipeline/.cache/terrarium
+          key: terrarium-v1
+      - run: npm ci
+        working-directory: data-pipeline
+      - run: npx tsc
+        working-directory: data-pipeline
+      - run: npx tsx src/build.ts ${{ github.event.inputs.region || 'shenandoah' }}
+        working-directory: data-pipeline
+      - name: Commit generated data
+        run: |
+          git config user.name "trail-data-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && exit 0
+          git commit -m "Update generated trail data"
+          git push
