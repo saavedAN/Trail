@@ -4,10 +4,10 @@ import * as turf from "@turf/turf";
 import type { Feature, LineString, Position } from "geojson";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fetchOsm, type OsmElement } from "./osm.ts";
+import { fetchOsm, fetchNetwork, type OsmElement } from "./osm.ts";
+import { Graph } from "./router.ts";
 import { statsFor, round, KM_TO_MI, type RouteType, type Stats } from "./stats.ts";
 import { REGIONS, type HikeDef } from "./regions.ts";
-import { elevationAt } from "./elevation.ts";
 
 export type FeatureKind = "parking" | "campsite" | "shelter" | "water" | "viewpoint" | "waterfall" | "peak" | "trailhead" | "toilets" | "landmark";
 
@@ -55,47 +55,7 @@ function pois(elements: OsmElement[]): Poi[] {
   return out;
 }
 
-type Segment = { name: string; coords: Position[]; osmId: string };
-
-function segments(elements: OsmElement[]): Segment[] {
-  return elements
-    .filter((e) => e.type === "way" && e.geometry && e.tags?.name && kindOf(e.tags) === null)
-    .map((e) => ({ name: e.tags!.name, coords: e.geometry!.map((g) => [g.lon, g.lat]), osmId: `w${e.id}` }));
-}
-
 const dist = (a: Position, b: Position) => turf.distance(a, b, { units: "meters" });
-
-/** Chain segments end to end into one continuous line, flipping segments as needed (greedy nearest end). */
-function chain(segs: Position[][], start?: Position): Position[] {
-  const left = segs.map((s) => [...s]);
-  let line: Position[];
-  if (start) {
-    // Begin with the segment end nearest the given start point.
-    let bi = 0, flip = false, bd = Infinity;
-    left.forEach((s, i) => {
-      const d0 = dist(s[0], start), d1 = dist(s.at(-1)!, start);
-      if (d0 < bd) { bd = d0; bi = i; flip = false; }
-      if (d1 < bd) { bd = d1; bi = i; flip = true; }
-    });
-    line = flip ? left[bi].reverse() : left[bi];
-    left.splice(bi, 1);
-  } else {
-    line = left.shift()!;
-  }
-  while (left.length) {
-    const end = line.at(-1)!;
-    let bi = 0, flip = false, bd = Infinity;
-    left.forEach((s, i) => {
-      const d0 = dist(s[0], end), d1 = dist(s.at(-1)!, end);
-      if (d0 < bd) { bd = d0; bi = i; flip = false; }
-      if (d1 < bd) { bd = d1; bi = i; flip = true; }
-    });
-    const s = flip ? left[bi].reverse() : left[bi];
-    left.splice(bi, 1);
-    line.push(...(dist(s[0], end) < 1 ? s.slice(1) : s));
-  }
-  return line;
-}
 
 function featuresAlong(line: Feature<LineString>, all: Poi[], kinds: FeatureKind[], maxM: number): TrailFeature[] {
   const bbox = turf.bbox(turf.buffer(line, maxM / 1000, { units: "kilometers" })!);
@@ -122,41 +82,48 @@ function featuresAlong(line: Feature<LineString>, all: Poi[], kinds: FeatureKind
 
 const ON_TRAIL: FeatureKind[] = ["campsite", "shelter", "water", "viewpoint", "waterfall", "peak", "toilets", "landmark"];
 
-async function buildHike(def: HikeDef, segs: Segment[], all: Poi[]): Promise<Trail | string> {
-  const parts: Position[][] = [];
-  for (const want of def.segments) {
-    const hits = segs.filter((s) => s.name === want && inBox(s.coords, def.within));
-    if (!hits.length) {
-      const nearby = [...new Set(segs.filter((s) => inBox(s.coords, def.within)).map((s) => s.name))].sort();
-      return `no OSM segment named "${want}" in the area. Names nearby: ${nearby.join("; ")}`;
+async function buildHike(def: HikeDef, all: Poi[]): Promise<Trail | string> {
+  const graph = new Graph(await fetchNetwork(def.id, def.within));
+  const here = (p: Poi) => inBox([[p.lon, p.lat]], def.within);
+
+  // Waypoints: a feature name or a point.
+  const stops: Position[] = [];
+  for (const w of def.via) {
+    if (typeof w !== "string") { stops.push(w); continue; }
+    const poi = all.find((p) => p.name === w && here(p));
+    if (!poi) {
+      const names = [...new Set(all.filter((p) => here(p) && p.name && p.kind !== "parking").map((p) => `${p.name} (${p.kind})`))].sort();
+      return `no feature named "${w}". Named features in the area: ${names.join("; ")}`;
     }
-    parts.push(chain(hits.map((h) => h.coords)));
+    stops.push([poi.lon, poi.lat]);
   }
-  let coords = chain(parts, def.start);
-  if (def.startHigh) {
-    const [a, b] = await Promise.all([elevationAt(coords[0][0], coords[0][1]), elevationAt(coords.at(-1)![0], coords.at(-1)![1])]);
-    if (b > a) coords.reverse();
+
+  // Parking: the matching lot nearest the first stop.
+  const lots = all.filter((p) => p.kind === "parking" && here(p) && p.name && def.parking.test(p.name));
+  if (!lots.length) {
+    const names = all.filter((p) => p.kind === "parking" && here(p) && p.name).map((p) => p.name).sort();
+    return `no parking lot matching ${def.parking}. Named lots in the area: ${names.join("; ")}`;
   }
-  for (const [which, name] of [["start", def.startAt], ["end", def.endAt]] as const) {
-    if (!name) continue;
-    const poi = all.find((p) => p.name === name && inBox([[p.lon, p.lat]], def.within));
-    if (!poi) return `no feature named "${name}" to ${which} at`;
-    const l = turf.lineString(coords);
-    coords = which === "start"
-      ? turf.lineSlice([poi.lon, poi.lat], coords.at(-1)!, l).geometry.coordinates
-      : turf.lineSlice(coords[0], [poi.lon, poi.lat], l).geometry.coordinates;
+  const lot = lots.sort((a, b) => dist([a.lon, a.lat], stops[0]) - dist([b.lon, b.lat], stops[0]))[0];
+
+  // Route lot -> stops (-> lot for a loop). Later legs avoid paths already walked, so loops come back another way.
+  const points = [[lot.lon, lot.lat], ...stops, ...(def.type === "loop" ? [[lot.lon, lot.lat]] : [])];
+  const nodes = points.map((p) => graph.nearest(p));
+  const far = nodes.find((n) => n.meters > 300);
+  if (far) return `a waypoint is ${Math.round(far.meters)} m from the nearest mapped path`;
+  const used = new Set<number>();
+  const path: number[] = [];
+  for (let i = 1; i < nodes.length; i++) {
+    const leg = graph.route(nodes[i - 1].node, nodes[i].node, used);
+    if (!leg) return "no connected path between the parking lot and a waypoint";
+    leg.edges.forEach((e) => used.add(e));
+    path.push(...(path.length ? leg.path.slice(1) : leg.path));
   }
+  const coords = path.map((n) => graph.coords[n]);
   const line = turf.lineString(coords);
   const stats = await statsFor(line, def.type);
   const { profile, ...rest } = stats;
-  const features = featuresAlong(line, all, ON_TRAIL, 150);
-  const ends = def.type === "point-to-point" ? [coords[0], coords.at(-1)!] : [coords[0]];
-  const parking: TrailFeature[] = all
-    .filter((p) => p.kind === "parking" || p.kind === "trailhead")
-    .map((p) => ({ p, d: Math.min(...ends.map((e) => dist(e, [p.lon, p.lat]))) }))
-    .filter(({ d }) => d <= 500)
-    .sort((a, b) => a.d - b.d)
-    .map(({ p, d }) => ({ id: p.id, kind: p.kind, name: p.name, lon: p.lon, lat: p.lat, mi: 0, offTrailFt: Math.round(d * 3.28084) }));
+  const features = featuresAlong(line, all, ON_TRAIL, 100);
   return {
     id: def.id,
     name: def.name,
@@ -164,7 +131,7 @@ async function buildHike(def: HikeDef, segs: Segment[], all: Poi[]): Promise<Tra
     stats: rest,
     profile,
     features,
-    parking,
+    parking: [{ id: lot.id, kind: "parking", name: lot.name, lon: lot.lon, lat: lot.lat, mi: 0, offTrailFt: Math.round(nodes[0].meters * 3.28084) }],
     geometry: turf.cleanCoords(turf.simplify(line, { tolerance: 0.00002 })).geometry.coordinates.map(([x, y]: Position) => [round(x, 6), round(y, 6)]),
     bbox: turf.bbox(line).map((n) => round(n, 5)),
     source: "OpenStreetMap contributors (ODbL); elevation: AWS Terrain Tiles (USGS 3DEP)",
@@ -183,13 +150,12 @@ async function main() {
   console.log(`Fetching OSM data for ${region.name}…`);
   const elements = await fetchOsm(regionId, region.bbox);
   const all = pois(elements);
-  const segs = segments(elements);
-  console.log(`${segs.length} named trail segments, ${all.length} features`);
+  console.log(`${all.length} features`);
 
   const trails: Trail[] = [];
   const problems: string[] = [];
   for (const def of region.hikes) {
-    const t = await buildHike(def, segs, all);
+    const t = await buildHike(def, all);
     if (typeof t === "string") { problems.push(`${def.name}: ${t}`); continue; }
     trails.push(t);
     console.log(`  ${t.name}: ${t.stats.lengthMi} mi, +${t.stats.gainFt} ft, ${t.stats.difficulty}, ${t.features.length} features`);
@@ -221,7 +187,7 @@ function report(name: string, trails: Trail[], problems: string[], all: Poi[]): 
     ...trails.flatMap((t) => [
       `## ${t.name}`,
       "",
-      `Parking: ${t.parking.length ? t.parking.map((p) => `${p.name ?? p.kind} (${p.offTrailFt} ft from the start)`).join(", ") : "none mapped within 500 m of the start"}`,
+      `Parking: ${t.parking.length ? t.parking.map((p) => `${p.name ?? p.kind} (start and end)`).join(", ") : "none"}`,
       "",
       ...t.features.map((f) => `- mile ${f.mi.toFixed(1)}: ${f.kind}${f.name ? ` — ${f.name}` : ""}`),
       "",

@@ -41,6 +41,10 @@ function query(b: BBox): string {
 }
 
 export async function fetchOsm(name: string, bbox: BBox): Promise<OsmElement[]> {
+  return overpass(name, query(bbox));
+}
+
+async function overpass(name: string, q: string): Promise<OsmElement[]> {
   const file = path.join(CACHE_DIR, `${name}.json`);
   if (existsSync(file)) return JSON.parse(await readFile(file, "utf8")).elements;
   let json: { elements: OsmElement[] } | undefined;
@@ -51,7 +55,7 @@ export async function fetchOsm(name: string, bbox: BBox): Promise<OsmElement[]> 
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "personal-trail-app/0.1" },
-          body: new URLSearchParams({ data: query(bbox) }),
+          body: new URLSearchParams({ data: q }),
         });
         if (res.ok) { json = await res.json(); break; }
         console.warn(`${url}: HTTP ${res.status}`);
@@ -65,4 +69,13 @@ export async function fetchOsm(name: string, bbox: BBox): Promise<OsmElement[]> 
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(file, JSON.stringify(json));
   return json.elements;
+}
+
+/** All walkable ways (trails, tracks, minor roads) in a box, for routing. Box is [west, south, east, north]. */
+export async function fetchNetwork(name: string, box: [number, number, number, number]): Promise<OsmElement[]> {
+  const [w, s, e, n] = box;
+  const q = `[out:json][timeout:120];
+way["highway"]["highway"!~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|construction|proposed|raceway)$"](${s},${w},${n},${e});
+out tags geom;`;
+  return overpass(`net-${name}`, q);
 }
