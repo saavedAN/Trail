@@ -242,9 +242,13 @@ async function main() {
     const counts: Record<string, number> = {};
     features.forEach((f) => (counts[f.kind] = (counts[f.kind] ?? 0) + 1));
     const geometry = turf.cleanCoords(turf.simplify(line, { tolerance: 0.00002 })).geometry.coordinates.map(([x, y]: number[]) => [round(x, 6), round(y, 6)]);
-    const mid = coords[Math.floor(coords.length / 2)];
-    let inside = areasAt(mid[0], mid[1]);
-    if (!inside.length) inside = areasAt(coords[0][0], coords[0][1]);
+    // Sample a few spots along the way (start, quarter points, turnaround) and pool the areas they fall in.
+    const pooled = new Map<string, Area>();
+    for (const f of [0, 0.25, 0.5, 0.75]) {
+      const c = coords[Math.floor((coords.length - 1) * f)];
+      for (const a of areasAt(c[0], c[1])) pooled.set(a.name, a);
+    }
+    const inside = [...pooled.values()].sort((x, y) => x.area - y.area);
     if (!inside.length) noArea++;
     const land = landFor(inside.map((a) => a.name));
     const summary: Summary = {

@@ -51,6 +51,7 @@ const RULES: [RegExp, string][] = [
   [/blue ridge parkway/i, "Blue Ridge Parkway: camping only in designated campgrounds (fee)."],
   [/state park/i, "State park: camping only in park campgrounds or designated backcountry sites; fee and reservations (reservevaparks.com in VA)."],
   [/state forest/i, "State forest: camping usually by permit or at designated sites only."],
+  [/appalachian national scenic trail/i, "Appalachian Trail corridor: camp only at the shelters and designated campsites along the AT; free, first come, first served."],
   [/wildlife management area/i, "Wildlife management area: primitive camping allowed in some WMAs with an access permit; check DWR rules."],
   [/wilderness/i, "Wilderness area (national forest): free dispersed camping; groups of 10 or fewer, no motorized gear."],
   [/national recreation area/i, "National recreation area (national forest): free dispersed camping in most areas; developed campgrounds charge a fee."],
