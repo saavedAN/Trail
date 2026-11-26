@@ -126,4 +126,19 @@ main { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .chart .dot { fill: #1d6fe0; stroke: #fff; stroke-width: 2; }
 .chart .you { fill: var(--accent); stroke: #fff; stroke-width: 2; }
 
+.small { font-size: 12px; }
+.camp-rule { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid #8a5a2b; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.stats { margin-top: 10px; }
+.trail-body .chart { margin-top: 10px; }
+.chart .steep { fill: #e0a526; opacity: .55; }
+.chart .vsteep { fill: #c0392b; opacity: .8; }
+.chart-legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); padding: 2px 4px 6px; }
+.chart-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.grade { font-weight: 600; }
+
+/* Map popups: always dark text on white, readable in dark mode too. */
+.maplibregl-popup-content { color: #1f2a1f; background: #fff; font-size: 14px; line-height: 1.35; padding: 8px 12px; border-radius: 10px; box-shadow: 0 2px 10px rgb(0 0 0 / .3); max-width: 240px; }
+.maplibregl-popup-content b { font-weight: 600; }
+.popup-info { color: #4a544a; font-size: 13px; margin-top: 2px; }
+
 .maplibregl-ctrl-top-right { top: env(safe-area-inset-top); }

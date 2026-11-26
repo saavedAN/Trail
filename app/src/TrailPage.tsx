@@ -45,17 +45,17 @@ export function TrailPage({ id }: { id: string }) {
       m.addLayer({ id: "trail-casing", type: "line", source: "trail", paint: { "line-color": "#fff", "line-width": 7 }, layout: { "line-cap": "round", "line-join": "round" } });
       m.addLayer({ id: "trail-line", type: "line", source: "trail", paint: { "line-color": "#d9480f", "line-width": 4 }, layout: { "line-cap": "round", "line-join": "round" } });
     });
-    const add = (kind: FeatureKind, lon: number, lat: number, title: string) => {
+    const add = (kind: FeatureKind, lon: number, lat: number, title: string, info?: string) => {
       const el = document.createElement("div");
       el.className = `fmarker k-${kind}`;
       el.textContent = FEATURE_META[kind].icon;
       el.style.background = FEATURE_META[kind].color;
       el.title = title;
-      const mk = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).setPopup(new maplibregl.Popup({ offset: 14, closeButton: false }).setText(title)).addTo(m);
+      const mk = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).setPopup(new maplibregl.Popup({ offset: 14, closeButton: false }).setDOMContent(popup(title, info))).addTo(m);
       markers.current.push({ kind, m: mk });
     };
     add("parking", trail.parking.lon, trail.parking.lat, trail.parking.name ?? "Parking");
-    for (const f of trail.features) add(f.kind, f.lon, f.lat, `${f.name ?? FEATURE_META[f.kind].label} · mile ${f.mi.toFixed(1)}`);
+    for (const f of trail.features) add(f.kind, f.lon, f.lat, `${f.name ?? FEATURE_META[f.kind].label} · mile ${f.mi.toFixed(1)}`, f.info ?? (f.name ? FEATURE_META[f.kind].label : undefined));
     const el = document.createElement("div");
     el.className = "cursor-dot";
     cursor.current = new maplibregl.Marker({ element: el });
@@ -91,6 +91,7 @@ export function TrailPage({ id }: { id: string }) {
   if (error) return <div className="page"><p className="error">Couldn't load this trail. {error}</p></div>;
   if (!trail) return <div className="page"><p className="muted">Loading trail…</p></div>;
 
+  const camps = trail.features.filter((f) => f.kind === "campsite" || f.kind === "shelter");
   const kinds = [...new Set(trail.features.map((f) => f.kind))];
   const toggle = (k: FeatureKind) => setHidden((h) => { const n = new Set(h); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
@@ -110,7 +111,10 @@ export function TrailPage({ id }: { id: string }) {
       <div className="trail-body">
         <button className="back" onClick={() => history.back()}>‹ Back</button>
         <h1>{trail.name}</h1>
-        <div className="muted">{trail.via.length ? `via ${trail.via.join(", ")}` : ""}</div>
+        <div className="muted">{trail.via.length ? `via ${trail.via.join(", ")}` : ""}{trail.area ? `${trail.via.length ? " · " : ""}${trail.area}` : ""}</div>
+
+        <ElevationChart profile={trail.profile} active={active} onActive={setActive} youMi={onTrail && "mi" in onTrail ? onTrail.mi : null} />
+
         <div className="stats">
           <div><span>Length</span><b>{fmtMi(trail.lengthMi)}</b></div>
           <div><span>Elev. gain</span><b>{fmtFt(trail.gainFt)}</b></div>
@@ -124,8 +128,6 @@ export function TrailPage({ id }: { id: string }) {
           <div className="you-box">You're at <b>mile {onTrail.mi.toFixed(1)}</b> of {fmtMi(trail.lengthMi)} · {fmtFt(onTrail.ft!)} · {fmtMi(Math.max(0, trail.lengthMi - onTrail.mi))} to go</div>
         )}
 
-        <ElevationChart profile={trail.profile} active={active} onActive={setActive} youMi={onTrail && "mi" in onTrail ? onTrail.mi : null} />
-
         <div className="actions">
           <button className={saved ? "btn" : "btn primary"} onClick={save}>{saved ? "★ Saved" : "☆ Save"}</button>
           <button className="btn primary" disabled={!!progress} onClick={download}>
@@ -138,6 +140,21 @@ export function TrailPage({ id }: { id: string }) {
           {trail.parking.name ?? "Trailhead parking"} ·{" "}
           <a href={`https://maps.apple.com/?daddr=${trail.parking.lat},${trail.parking.lon}`} target="_blank" rel="noreferrer">Directions</a>
         </p>
+
+        <h2>Camping &amp; shelters</h2>
+        {camps.length ? (
+          <ul className="features">
+            {camps.map((f, i) => (
+              <li key={i} onClick={() => map.current?.flyTo({ center: [f.lon, f.lat], zoom: 15 })}>
+                <span className="fdot" style={{ background: FEATURE_META[f.kind].color }}>{FEATURE_META[f.kind].icon}</span>
+                <span>{f.name ?? FEATURE_META[f.kind].label}<br /><span className="muted small">{f.info ?? "No details mapped"}</span></span>
+                <span className="muted">mile {f.mi.toFixed(1)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="muted">No campsites or shelters are mapped within 100 m of this hike.</p>}
+        {trail.camping && <p className="camp-rule">{trail.camping}</p>}
+        <p className="muted small">Fee and permit details come from OpenStreetMap and are often missing. Land rules are general guidance; check with the park or forest before you go.</p>
 
         {kinds.length > 0 && (
           <>
@@ -167,4 +184,19 @@ export function TrailPage({ id }: { id: string }) {
       </div>
     </div>
   );
+}
+
+/** Popup body: title plus an optional detail line. Built from DOM nodes so names are never parsed as HTML. */
+function popup(title: string, info?: string) {
+  const el = document.createElement("div");
+  const b = document.createElement("b");
+  b.textContent = title;
+  el.append(b);
+  if (info) {
+    const d = document.createElement("div");
+    d.className = "popup-info";
+    d.textContent = info;
+    el.append(d);
+  }
+  return el;
 }

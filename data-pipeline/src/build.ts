@@ -12,12 +12,13 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { Network, edgeKey, haversine } from "./network.ts";
 import { REGIONS, type HikeDef, type Box } from "./regions.ts";
+import { areaFrom, campInfo, campingRule, type Area } from "./camping.ts";
 import { statsFor, round, KM_TO_MI, type RouteType } from "./stats.ts";
 
 export type FeatureKind = "parking" | "campsite" | "shelter" | "water" | "viewpoint" | "waterfall" | "peak" | "trailhead" | "toilets" | "landmark";
 
-type Poi = { id: string; kind: FeatureKind; name?: string; lon: number; lat: number };
-export type TrailFeature = { kind: FeatureKind; name?: string; lon: number; lat: number; mi: number };
+type Poi = { id: string; kind: FeatureKind; name?: string; lon: number; lat: number; info?: string };
+export type TrailFeature = { kind: FeatureKind; name?: string; lon: number; lat: number; mi: number; info?: string };
 
 const MAX_ONE_WAY_M = 13000; // ~8 miles each way
 const MIN_ONE_WAY_M = 400; // shorter than this is a roadside stop, not a hike
@@ -43,6 +44,7 @@ const inBox = (lon: number, lat: number, b: Box) => lon >= b[0] && lon <= b[2] &
 async function load(file: string, bbox: Box) {
   const net = new Network();
   const pois: Poi[] = [];
+  const areas: Area[] = [];
   const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity });
   for await (let line of rl) {
     line = line.replace(/^\x1e/, "").trim();
@@ -51,15 +53,17 @@ async function load(file: string, bbox: Box) {
     const t: Record<string, string> = f.properties ?? {};
     const g = f.geometry;
     if (!g) continue;
+    const area = areaFrom(f, t);
+    if (area) areas.push(area);
     const kind = kindOf(t);
     if (kind) {
       const c: number[] = g.type === "Point" ? g.coordinates : turf.centroid(f).geometry.coordinates;
-      if (inBox(c[0], c[1], bbox)) pois.push({ id: `${String(t["@type"] ?? "x")[0]}${t["@id"] ?? pois.length}`, kind, name: t.name, lon: c[0], lat: c[1] });
+      if (inBox(c[0], c[1], bbox)) pois.push({ id: `${String(t["@type"] ?? "x")[0]}${t["@id"] ?? pois.length}`, kind, name: t.name, lon: c[0], lat: c[1], info: campInfo(t) });
     }
     if (t.highway && g.type === "LineString" && kind === null) net.addWay(g.coordinates, t);
   }
   net.finish();
-  return { net, pois };
+  return { net, pois, areas };
 }
 
 class PoiIndex {
@@ -103,7 +107,7 @@ function featuresAlong(coords: number[][], idx: PoiIndex, maxM: number): TrailFe
     const near = turf.nearestPointOnLine(line, [p.lon, p.lat], { units: "kilometers" });
     if ((near.properties.dist ?? 1) * 1000 > maxM) continue;
     const key = `${p.kind}:${p.name ?? `${round(p.lon, 3)},${round(p.lat, 3)}`}`;
-    if (!seen.has(key)) seen.set(key, { kind: p.kind, name: p.name, lon: round(p.lon, 6), lat: round(p.lat, 6), mi: round((near.properties.location ?? 0) * KM_TO_MI, 2) });
+    if (!seen.has(key)) seen.set(key, { kind: p.kind, name: p.name, lon: round(p.lon, 6), lat: round(p.lat, 6), mi: round((near.properties.location ?? 0) * KM_TO_MI, 2), ...(p.info ? { info: p.info } : {}) });
   }
   return [...seen.values()].sort((a, b) => a.mi - b.mi);
 }
@@ -120,7 +124,19 @@ async function main() {
   const region = REGIONS[regionId];
   if (!region || !file) throw new Error("usage: build.ts <region> <export.geojsonseq>");
   console.time("load");
-  const { net, pois } = await load(file, region.bbox);
+  const { net, pois, areas } = await load(file, region.bbox);
+  console.log(`${areas.length} parks and forests`);
+  // Smallest named area containing a point (a wilderness inside a national forest wins).
+  const areaAt = (lon: number, lat: number) => {
+    let best: Area | undefined;
+    for (const a of areas) {
+      if (best && a.area >= best.area) continue;
+      const [w, s, e, n] = a.bbox ??= turf.bbox(a.shape);
+      if (lon < w || lon > e || lat < s || lat > n) continue;
+      if (turf.booleanPointInPolygon([lon, lat], a.shape)) best = a;
+    }
+    return best;
+  };
   console.timeEnd("load");
   console.log(`${net.nodeCount} nodes, ${pois.length} features`);
   const idx = new PoiIndex(pois);
@@ -223,8 +239,10 @@ async function main() {
     const counts: Record<string, number> = {};
     features.forEach((f) => (counts[f.kind] = (counts[f.kind] ?? 0) + 1));
     const geometry = turf.cleanCoords(turf.simplify(line, { tolerance: 0.00002 })).geometry.coordinates.map(([x, y]: number[]) => [round(x, 6), round(y, 6)]);
+    const mid = coords[Math.floor(coords.length / 2)];
+    const area = areaAt(mid[0], mid[1]) ?? areaAt(coords[0][0], coords[0][1]);
     const summary: Summary = {
-      id, name: h.name, type: h.type, dest: h.dest ?? null,
+      id, name: h.name, type: h.type, dest: h.dest ?? null, area: area?.name ?? null, camping: campingRule(area?.name) ?? null,
       ...rest, counts, via: h.route.viaNames.slice(0, 4),
       parking: { name: h.parking.name ?? null, lon: round(h.parking.lon, 5), lat: round(h.parking.lat, 5) },
       bbox: turf.bbox(line).map((n) => round(n, 5)),
@@ -275,7 +293,7 @@ async function pool(jobs: (() => Promise<void>)[], n: number) {
 }
 
 type Summary = {
-  id: string; name: string; type: string; dest: string | null; lengthMi: number; gainFt: number; lossFt: number; highFt: number; lowFt: number;
+  id: string; name: string; type: string; dest: string | null; area: string | null; camping: string | null; lengthMi: number; gainFt: number; lossFt: number; highFt: number; lowFt: number;
   rating: number; difficulty: string; difficultySimple: string; hours: number; counts: Record<string, number>; via: string[];
   parking: { name: string | null; lon: number; lat: number }; bbox: number[];
 };
