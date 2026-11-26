@@ -1,0 +1,90 @@
+name: Build trail data
+
+# Builds every hike for the region on GitHub's servers (which can download OpenStreetMap data),
+# then publishes the result to the `data` branch, where the app deploy picks it up.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "data-pipeline/**"
+      - ".github/workflows/build-data.yml"
+  schedule:
+    - cron: "0 9 1 * *" # monthly refresh
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: build-data
+  cancel-in-progress: true
+
+env:
+  REGION: virginia
+  BBOX: "-83.7,36.5,-77.6,39.35"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: data-pipeline/package-lock.json
+      - name: Cache elevation tiles
+        uses: actions/cache@v4
+        with:
+          path: data-pipeline/.cache/terrarium
+          key: terrarium-${{ github.run_id }}
+          restore-keys: terrarium-
+      - name: Install osmium
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      - name: Download OpenStreetMap extracts
+        run: |
+          mkdir -p osm && cd osm
+          curl -fsSLO https://download.geofabrik.de/north-america/us/virginia-latest.osm.pbf
+          curl -fsSLO https://download.geofabrik.de/north-america/us/west-virginia-latest.osm.pbf
+          ls -lh
+      - name: Filter to trails, roads to trailheads, and trail features
+        working-directory: osm
+        run: |
+          osmium merge virginia-latest.osm.pbf west-virginia-latest.osm.pbf -o merged.pbf --overwrite
+          osmium extract -b "$BBOX" merged.pbf -o box.pbf --overwrite
+          osmium tags-filter box.pbf \
+            w/highway=path,footway,track,bridleway,steps,cycleway,service,unclassified,tertiary,residential,secondary,primary \
+            nwr/amenity=parking,shelter,drinking_water,toilets \
+            nwr/tourism=camp_site,camp_pitch,wilderness_hut,alpine_hut,viewpoint,attraction \
+            nwr/natural=peak,spring,cave_entrance,cliff,rock,arch \
+            nwr/waterway=waterfall nwr/man_made=water_tap n/highway=trailhead \
+            -o filtered.pbf --overwrite
+          osmium export filtered.pbf -f geojsonseq -a type,id -o region.geojsonseq --overwrite
+          ls -lh
+      - run: npm ci
+        working-directory: data-pipeline
+      - run: npx tsc
+        working-directory: data-pipeline
+      - name: Build hikes
+        working-directory: data-pipeline
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: npx tsx src/build.ts "$REGION" ../osm/region.geojsonseq
+      - name: Show sample
+        run: cat "data/$REGION/SAMPLE.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish to the data branch
+        run: |
+          cp "data/$REGION/SAMPLE.md" /tmp/SAMPLE.md
+          cd data
+          git init -q -b data
+          git config user.name "trail-data-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Trail data built from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" data
+      - name: Redeploy the app with the new data
+        if: github.ref == 'refs/heads/main'
+        run: gh workflow run deploy-app.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
