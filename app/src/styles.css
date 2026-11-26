@@ -164,3 +164,17 @@ main { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 /* Full screen trail map */
 .trail-map.full { position: fixed; inset: 0; height: auto; z-index: 50; }
 .map-full { position: absolute; z-index: 5; left: 10px; top: calc(10px + env(safe-area-inset-top)); width: 36px; height: 36px; border-radius: 8px; border: 0; background: #fff; color: #1f2a1f; font-size: 18px; box-shadow: 0 0 0 2px rgb(0 0 0 / .1); cursor: pointer; }
+
+/* Explore: hike preview */
+.explore .map .maplibregl-ctrl-bottom-left, .explore .map .maplibregl-ctrl-bottom-right { bottom: var(--sheet-h, 0px); transition: bottom .15s; }
+.sheet-sub { font-size: 13px; margin: 10px 4px 0; }
+.card.preview { cursor: default; border-color: var(--accent); border-width: 2px; }
+.card.mini { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; }
+.card.mini .card-name { font-size: 15px; }
+.card.mini .card-meta { margin-top: 2px; }
+.spark { position: relative; margin-top: 10px; height: 44px; }
+.spark svg { width: 100%; height: 44px; display: block; }
+.spark path { fill: color-mix(in srgb, var(--orange) 22%, transparent); stroke: var(--orange); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.spark-empty { background: var(--chip); border-radius: 6px; opacity: .5; }
+.spark-label { position: absolute; top: -2px; right: 0; font-size: 11px; background: var(--surface); padding: 0 0 2px 6px; border-radius: 0 0 0 6px; }
+.btn.open { display: block; width: 100%; margin-top: 10px; font-weight: 600; }
