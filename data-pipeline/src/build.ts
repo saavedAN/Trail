@@ -225,6 +225,12 @@ async function main() {
   hikes.push(...kept);
   console.log(`${kept.length} automatic hikes, ${hikes.length} total`);
 
+  // 3. Named trails no hike walks yet (e.g. Billy Goat Trail): from the nearest lot to the far end, or around if it loops.
+  const named = namedTrailHikes(net, lotAt, trailheadAt, hikes);
+  hikes.push(...named);
+  console.log(`${named.length} named-trail hikes, ${hikes.length} total`);
+  for (const p of pois) if (p.name && DEBUG.test(p.name)) console.log(`  poi ${p.kind} "${p.name}" ${p.lon.toFixed(4)},${p.lat.toFixed(4)}`);
+
   // Stats, features, output.
   const outDir = path.resolve(import.meta.dirname, `../../data/${regionId}`);
   await rm(outDir, { recursive: true, force: true });
@@ -254,7 +260,7 @@ async function main() {
     const inside = [...pooled.values()].sort((x, y) => x.area - y.area);
     if (!inside.length) noArea++;
     const names = inside.map((a) => a.name);
-    const land = landFor(names);
+    const land = landFor(names, h.route.viaNames.some((v) => /^appalachian (national scenic )?trail$/i.test(v)));
     const park = npsPark(names);
     const lotFee = h.parking.fee;
     const fee = park?.entranceFee ? "entrance" : lotFee && lotFee !== "no" ? "parking" : lotFee === "no" ? "free" : null;
@@ -276,6 +282,84 @@ async function main() {
   console.log(`Wrote ${index.length} hikes to ${outDir}`);
   console.log(`${noArea} hikes are outside any mapped park or forest`);
   if (problems.length) console.log("Problems:\n  " + problems.join("\n  "));
+}
+
+const DEBUG = /grandfather|calloway|mary.?s rock|bear rocks|billy goat|seneca rocks|mcafee/i;
+
+/** Hikes along named trails that no other hike covers. */
+function namedTrailHikes(net: Network, lotAt: Map<number, Poi>, trailheadAt: Map<number, Poi>, existing: Hike[]): Hike[] {
+  const key = (lon: number, lat: number) => `${lon.toFixed(6)},${lat.toFixed(6)}`;
+  const covered = new Set<string>();
+  for (const h of existing) for (const c of h.route.coords) covered.add(key(c[0], c[1]));
+  // Group trail edges by name, then into connected pieces (the same name is reused in many places).
+  const byName = new Map<number, number[]>(); // name id -> node list (pairs)
+  for (let u = 0; u < net.nodeCount; u++) {
+    for (let k = net.off[u]; k < net.off[u + 1]; k++) {
+      const v = net.to[k];
+      if (v < u || !net.trail[k] || !net.edgeName[k]) continue;
+      const nm = net.edgeName[k];
+      if (/^appalachian (national scenic )?trail$/i.test(net.names[nm])) continue;
+      let a = byName.get(nm);
+      if (!a) byName.set(nm, (a = []));
+      a.push(u, v, k);
+    }
+  }
+  const out: Hike[] = [];
+  const parent = new Map<number, number>();
+  const find = (x: number): number => { let r = x; while (parent.get(r) !== undefined && parent.get(r) !== r) r = parent.get(r)!; parent.set(x, r); return r; };
+  const skipped = { short: 0, covered: 0, noStart: 0, noRoute: 0, road: 0 };
+  for (const [nm, list] of byName) {
+    parent.clear();
+    for (let i = 0; i < list.length; i += 3) {
+      const a = find(list[i]), b = find(list[i + 1]);
+      if (!parent.has(a)) parent.set(a, a);
+      if (a !== b) parent.set(b, a);
+    }
+    const comps = new Map<number, { nodes: Map<number, number>; len: number }>();
+    for (let i = 0; i < list.length; i += 3) {
+      const r = find(list[i]);
+      let c = comps.get(r);
+      if (!c) comps.set(r, (c = { nodes: new Map(), len: 0 }));
+      c.len += net.len[list[i + 2]];
+      for (const n of [list[i], list[i + 1]]) c.nodes.set(n, (c.nodes.get(n) ?? 0) + 1);
+    }
+    for (const c of comps.values()) {
+      if (c.len < 1500 || c.len > 30000) { skipped.short++; continue; }
+      let cov = 0;
+      for (const n of c.nodes.keys()) if (covered.has(key(net.lon[n], net.lat[n]))) cov++;
+      if (cov > c.nodes.size * 0.4) { skipped.covered++; continue; }
+      const nodes = [...c.nodes.keys()];
+      const ends = nodes.filter((n) => c.nodes.get(n) === 1);
+      // Start: nearest lot or trailhead to any point of the trail (search from one end, or any node for a loop).
+      const from = ends[0] ?? nodes[0];
+      let r = net.search(from, (n) => lotAt.has(n), 3000) ?? net.search(from, (n) => trailheadAt.has(n), 3000) ?? net.search(from, (n) => net.isJunction(n), 2000);
+      if (!r) { skipped.noStart++; continue; }
+      const start = r.node;
+      const isLoop = ends.length === 0;
+      const far = (isLoop ? nodes : ends).reduce((b, n) => haversine(net.lon[n], net.lat[n], net.lon[start], net.lat[start]) > haversine(net.lon[b], net.lat[b], net.lon[start], net.lat[start]) ? n : b, nodes[0]);
+      const go = net.search(start, (n) => n === far, MAX_ONE_WAY_M);
+      if (!go) { skipped.noRoute++; continue; }
+      let path = go.path, edges = go.edges;
+      let type: Hike["type"] = "out-and-back";
+      if (isLoop) {
+        const avoid = new Set<number>();
+        for (let j = 1; j < go.path.length; j++) avoid.add(edgeKey(go.path[j - 1], go.path[j]));
+        const back = net.search(far, (n) => n === start, MAX_ONE_WAY_M, avoid);
+        if (back) { path = [...go.path, ...back.path.slice(1)]; edges = [...go.edges, ...back.edges]; type = "loop"; }
+      }
+      const route = toRoute(net, path, edges);
+      const m = route.trailM + route.roadM;
+      if (route.trailM < m * 0.6) { skipped.road++; continue; }
+      const lot = lotAt.get(start) ?? trailheadAt.get(start);
+      const parking = lot
+        ? { name: lot.name, lon: lot.lon, lat: lot.lat, fee: lot.fee }
+        : { name: net.roadName(start) ? `Roadside parking, ${net.roadName(start)}` : "Roadside parking", lon: net.lon[start], lat: net.lat[start] };
+      out.push({ id: "", name: net.names[nm], type, route, parking });
+      for (const p of path) covered.add(key(net.lon[p], net.lat[p]));
+    }
+  }
+  console.log("Named trails skipped:", JSON.stringify(skipped));
+  return out;
 }
 
 function curated(def: HikeDef, net: Network, pois: Poi[], lotAt: Map<number, Poi>): Hike | string {
