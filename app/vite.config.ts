@@ -39,7 +39,7 @@ export default defineConfig({
           },
           {
             // Map tiles, fonts, sprites and elevation tiles never change: cache first.
-            urlPattern: ({ url }) => url.hostname === "tiles.openfreemap.org" || url.hostname === "s3.amazonaws.com",
+            urlPattern: ({ url }) => url.hostname === "tiles.openfreemap.org" || url.hostname === "s3.amazonaws.com" || url.hostname === "basemap.nationalmap.gov",
             handler: "CacheFirst",
             options: { cacheName: "trail-tiles-v1", expiration: { maxEntries: 30000 } },
           },

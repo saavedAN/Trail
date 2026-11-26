@@ -9,7 +9,9 @@ export class Network {
   lon: Float64Array = new Float64Array(1 << 20);
   lat: Float64Array = new Float64Array(1 << 20);
   nodeCount = 0;
-  private index = new Map<string, number>();
+  // Coordinate -> node id. A single Map tops out at ~16.7M entries, so it is split into shards
+  // with numeric keys (lon and lat in 1e-7 degrees, packed into 53 bits).
+  private index: Map<number, number>[] = Array.from({ length: 1024 }, () => new Map());
   // Edge list while building.
   private ea: number[] = [];
   private eb: number[] = [];
@@ -54,8 +56,11 @@ export class Network {
   }
 
   private node(c: number[]): number {
-    const key = `${Math.round(c[0] * 1e7)},${Math.round(c[1] * 1e7)}`;
-    let i = this.index.get(key);
+    const x = Math.round(c[0] * 1e7) + 1_800_000_000; // 0 .. 3.6e9
+    const y = Math.round(c[1] * 1e7) + 900_000_000; // 0 .. 1.8e9 (< 2^31)
+    const shard = this.index[x % 1024];
+    const key = Math.floor(x / 1024) * 2 ** 31 + y;
+    let i = shard.get(key);
     if (i === undefined) {
       i = this.nodeCount++;
       if (i >= this.lon.length) {
@@ -63,13 +68,13 @@ export class Network {
         this.lon = grow(this.lon); this.lat = grow(this.lat);
       }
       this.lon[i] = c[0]; this.lat[i] = c[1];
-      this.index.set(key, i);
+      shard.set(key, i);
     }
     return i;
   }
 
   finish() {
-    this.index.clear();
+    for (const m of this.index) m.clear();
     const n = this.nodeCount, m = this.ea.length;
     const deg = new Int32Array(n + 1);
     for (let e = 0; e < m; e++) { deg[this.ea[e]]++; deg[this.eb[e]]++; }

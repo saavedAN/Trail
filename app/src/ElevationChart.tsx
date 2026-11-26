@@ -11,10 +11,45 @@ type Props = {
 };
 
 const W = 360, H = 150, L = 40, R = 8, T = 10, B = 22;
+/** Grades (%) that count as steep and very steep. */
+export const STEEP = 10, VERY_STEEP = 20;
+/** Grade is measured over a quarter mile so GPS and elevation noise don't spike it. */
+const WINDOW_MI = 0.25;
+/** Shorter steep bits are not highlighted. */
+const MIN_RUN_MI = 0.1;
+
+/** Grade in percent at each profile point, in walking direction (+ is uphill). */
+export function grades(profile: ProfilePoint[]): number[] {
+  const out: number[] = [];
+  let a = 0, b = 0;
+  for (let i = 0; i < profile.length; i++) {
+    const mi = profile[i].mi;
+    while (profile[a].mi < mi - WINDOW_MI / 2 && a < i) a++;
+    while (b < profile.length - 1 && profile[b].mi < mi + WINDOW_MI / 2) b++;
+    const run = (profile[b].mi - profile[a].mi) * 5280;
+    out.push(run > 0 ? ((profile[b].ft - profile[a].ft) / run) * 100 : 0);
+  }
+  return out;
+}
+
+/** Runs of steep trail: [startMi, endMi, worst |grade|]. */
+export function steepRuns(profile: ProfilePoint[], g: number[], min: number) {
+  const runs: [number, number, number][] = [];
+  for (let i = 0; i < profile.length - 1; i++) {
+    const s = Math.max(Math.abs(g[i]), Math.abs(g[i + 1]));
+    if (Math.min(Math.abs(g[i]), Math.abs(g[i + 1])) < min && s < min) continue;
+    const last = runs.at(-1);
+    if (last && last[1] >= profile[i].mi - 1e-9) { last[1] = profile[i + 1].mi; last[2] = Math.max(last[2], s); }
+    else runs.push([profile[i].mi, profile[i + 1].mi, s]);
+  }
+  return runs.filter((r) => r[1] - r[0] >= MIN_RUN_MI);
+}
 
 /** Elevation profile. Drag a finger along it to see that spot on the map. */
 export function ElevationChart({ profile, active, onActive, youMi }: Props) {
   const ref = useRef<SVGSVGElement>(null);
+  const g = useMemo(() => grades(profile), [profile]);
+  const runs = useMemo(() => ({ steep: steepRuns(profile, g, STEEP), very: steepRuns(profile, g, VERY_STEEP) }), [profile, g]);
   const { path, area, x, y, ticksY, ticksX, maxMi } = useMemo(() => {
     const maxMi = profile.at(-1)?.mi ?? 1;
     const lo = Math.min(...profile.map((p) => p.ft)), hi = Math.max(...profile.map((p) => p.ft));
@@ -46,7 +81,7 @@ export function ElevationChart({ profile, active, onActive, youMi }: Props) {
   return (
     <div className="chart">
       <div className="chart-readout">
-        {a ? <>Mile <b>{a.mi.toFixed(2)}</b> · <b>{Math.round(a.ft).toLocaleString()} ft</b></> : <span className="muted">Drag along the chart to find a spot on the map</span>}
+        {a ? <>Mile <b>{a.mi.toFixed(2)}</b> · <b>{Math.round(a.ft).toLocaleString()} ft</b> · <Grade g={g[active!]} /></> : <span className="muted">Drag along the chart to find a spot on the map</span>}
       </div>
       <svg
         ref={ref}
@@ -67,6 +102,9 @@ export function ElevationChart({ profile, active, onActive, youMi }: Props) {
         {ticksX.map((v) => (
           <text key={v} x={x(v)} y={H - 6} textAnchor="middle" className="tick">{v} mi</text>
         ))}
+        {runs.steep.map(([s0, s1], i) => <rect key={`s${i}`} x={x(s0)} width={Math.max(1, x(s1) - x(s0))} y={T} height={H - T - B} className="steep" clipPath="url(#under-line)" />)}
+        {runs.very.map(([s0, s1], i) => <rect key={`v${i}`} x={x(s0)} width={Math.max(1, x(s1) - x(s0))} y={T} height={H - T - B} className="vsteep" clipPath="url(#under-line)" />)}
+        <clipPath id="under-line"><path d={area} /></clipPath>
         <path d={area} className="area" />
         <path d={path} className="line" />
         {you && <circle cx={x(you.mi)} cy={y(you.ft)} r={5} className="you" />}
@@ -77,8 +115,21 @@ export function ElevationChart({ profile, active, onActive, youMi }: Props) {
           </g>
         )}
       </svg>
+      <div className="chart-legend">
+        <span><i style={{ background: "#e0a526" }} />Steep {STEEP}%+</span>
+        <span><i style={{ background: "#b53a2e" }} />Very steep {VERY_STEEP}%+</span>
+        {runs.steep.length > 0 && <span>Steepest {Math.round(Math.max(...runs.steep.map((r) => r[2])))}%</span>}
+      </div>
     </div>
   );
+}
+
+function Grade({ g }: { g: number }) {
+  const v = Math.round(g);
+  const abs = Math.abs(v);
+  const color = abs >= VERY_STEEP ? "#b53a2e" : abs >= STEEP ? "#c27c0e" : undefined;
+  const word = abs < 3 ? "flat" : v > 0 ? "uphill" : "downhill";
+  return <span className="grade" style={{ color }}>{abs < 3 ? "" : v > 0 ? "↗ " : "↘ "}{abs}% {word}{abs >= VERY_STEEP ? " · very steep" : abs >= STEEP ? " · steep" : ""}</span>;
 }
 
 function niceStep(raw: number) {

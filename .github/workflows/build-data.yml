@@ -21,7 +21,6 @@ concurrency:
 
 env:
   REGION: virginia
-  BBOX: "-83.7,36.5,-77.6,39.35"
 
 jobs:
   build:
@@ -42,34 +41,38 @@ jobs:
           restore-keys: terrarium-
       - name: Install osmium
         run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      - run: npm ci
+        working-directory: data-pipeline
       - name: Download OpenStreetMap extracts
         run: |
-          mkdir -p osm && cd osm
-          curl -fsSLO https://download.geofabrik.de/north-america/us/virginia-latest.osm.pbf
-          curl -fsSLO https://download.geofabrik.de/north-america/us/west-virginia-latest.osm.pbf
+          mkdir -p osm
+          # The region lists its Geofabrik extracts and writes its coverage shape (box plus circles).
+          (cd data-pipeline && npx tsx src/region.ts "$REGION" ../osm/shape.geojson) > osm/extracts.txt
+          cd osm
+          while read -r path; do curl -fsSLO "https://download.geofabrik.de/$path"; done < extracts.txt
           ls -lh
       - name: Filter to trails, roads to trailheads, and trail features
         working-directory: osm
         run: |
-          osmium merge virginia-latest.osm.pbf west-virginia-latest.osm.pbf -o merged.pbf --overwrite
-          osmium extract -b "$BBOX" merged.pbf -o box.pbf --overwrite
+          osmium merge $(sed 's#.*/##' extracts.txt) -o merged.pbf --overwrite
+          osmium extract -s smart -S types=multipolygon,boundary -p shape.geojson merged.pbf -o box.pbf --overwrite
+          rm merged.pbf
           osmium tags-filter box.pbf \
             w/highway=path,footway,track,bridleway,steps,cycleway,service,unclassified,tertiary,residential,secondary,primary \
             nwr/amenity=parking,shelter,drinking_water,toilets \
             nwr/tourism=camp_site,camp_pitch,wilderness_hut,alpine_hut,viewpoint,attraction \
             nwr/natural=peak,spring,cave_entrance,cliff,rock,arch \
             nwr/waterway=waterfall nwr/man_made=water_tap n/highway=trailhead \
+            wr/boundary=national_park,protected_area,national_forest wr/leisure=nature_reserve \
             -o filtered.pbf --overwrite
           osmium export filtered.pbf -f geojsonseq -a type,id -o region.geojsonseq --overwrite
           ls -lh
-      - run: npm ci
-        working-directory: data-pipeline
       - run: npx tsc
         working-directory: data-pipeline
       - name: Build hikes
         working-directory: data-pipeline
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=11000
         run: npx tsx src/build.ts "$REGION" ../osm/region.geojsonseq
       - name: Show sample
         run: cat "data/$REGION/SAMPLE.md" >> "$GITHUB_STEP_SUMMARY"

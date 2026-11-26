@@ -57,6 +57,12 @@ export function Search({ trails, filters: f, setFilters, me }: Props) {
             ))}
           </div>
 
+          <label>Cost</label>
+          <div className="chips">
+            <button className={`chip ${f.noFee ? "on" : ""}`} onClick={() => set({ noFee: !f.noFee })}>No entrance or parking fee</button>
+            <button className={`chip ${f.freeCamping ? "on" : ""}`} onClick={() => set({ freeCamping: !f.freeCamping })}>Free camping</button>
+          </div>
+
           <label>Max length: {f.maxLength ? `${f.maxLength} mi` : "any"}</label>
           <input type="range" min={0} max={16} step={1} value={f.maxLength} onChange={(e) => set({ maxLength: +e.target.value })} />
 
