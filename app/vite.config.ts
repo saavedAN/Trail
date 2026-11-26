@@ -2,8 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-// Served from https://<user>.github.io/Trail/ on GitHub Pages.
-const base = process.env.BASE_PATH ?? "/Trail/";
+// Served from https://trail.theadrian.org/ (GitHub Pages custom domain).
+const base = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base,
