@@ -4,9 +4,9 @@ Features found in the park area: 3473 parking, 298 campsites, 192 shelters, 89 w
 
 | Trail | Type | Length (mi) | Gain (ft) | High point (ft) | Difficulty (rating) | Est. time (h) | Features on trail |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Old Rag Loop | loop | 8.34 | 2336 | 3257 | strenuous (197) | 5.3 | 2 toilets, 1 peak, 1 viewpoint, 2 shelter |
-| Whiteoak Canyon Upper Falls | out-and-back | 4.5 | 914 | 3493 | moderate (91) | 2.7 | 1 waterfall, 1 viewpoint |
-| Dark Hollow Falls | out-and-back | 1.13 | 356 | 3408 | easiest (28) | 0.7 | 2 viewpoint, 1 waterfall |
+| Old Rag Loop | loop | 8.42 | 2337 | 3257 | strenuous (198) | 5.4 | 2 toilets, 1 peak, 1 viewpoint, 2 shelter |
+| Whiteoak Canyon Upper Falls | out-and-back | 5.2 | 1462 | 2557 | moderately strenuous (123) | 3.3 | 3 viewpoint, 3 waterfall |
+| Dark Hollow Falls | out-and-back | 1.16 | 354 | 3408 | easiest (29) | 0.8 | 2 viewpoint, 1 waterfall |
 | Hawksbill Summit (Lower Hawksbill Trail) | out-and-back | 1.61 | 668 | 4038 | easiest (46) | 1.1 | 2 viewpoint, 1 shelter, 1 peak |
 | Stony Man via Appalachian Trail | loop | 1.36 | 295 | 3994 | easiest (28) | 0.8 | 2 viewpoint, 1 peak, 1 campsite |
 | Bearfence Mountain | loop | 1.08 | 284 | 3587 | easiest (25) | 0.7 | 3 viewpoint, 1 peak |
@@ -14,21 +14,25 @@ Features found in the park area: 3473 parking, 298 campsites, 192 shelters, 89 w
 
 ## Old Rag Loop
 
-Parking: Old Rag Upper Lot (Horse Trailers / RVs) (start and end)
+Parking: Old Rag Lower Lot (start and end)
 
 - mile 0.1: toilets
 - mile 3.5: peak — Old Rag Mountain
 - mile 3.5: viewpoint
 - mile 4.1: shelter — Byrd's Nest No. 1 Shelter
 - mile 5.0: toilets
-- mile 5.1: shelter — Old Rag Shelter
+- mile 5.0: shelter — Old Rag Shelter
 
 ## Whiteoak Canyon Upper Falls
 
-Parking: White Oak Canyon parking - Upper Lot (start and end)
+Parking: Whiteoak Boundary Parking (start and end)
 
+- mile 1.4: viewpoint
+- mile 1.4: waterfall — Lower Whiteoak Falls
+- mile 2.0: waterfall
+- mile 2.2: viewpoint
 - mile 2.2: waterfall — Upper Whiteoak Falls
-- mile 2.3: viewpoint
+- mile 2.6: viewpoint
 
 ## Dark Hollow Falls
 
