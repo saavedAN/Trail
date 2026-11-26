@@ -12,7 +12,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { Network, edgeKey, haversine } from "./network.ts";
 import { REGIONS, type HikeDef, type Box } from "./regions.ts";
-import { areaFrom, campInfo, campingRule, type Area } from "./camping.ts";
+import { areaFrom, campInfo, landFor, type Area } from "./camping.ts";
 import { statsFor, round, KM_TO_MI, type RouteType } from "./stats.ts";
 
 export type FeatureKind = "parking" | "campsite" | "shelter" | "water" | "viewpoint" | "waterfall" | "peak" | "trailhead" | "toilets" | "landmark";
@@ -126,17 +126,20 @@ async function main() {
   console.time("load");
   const { net, pois, areas } = await load(file, region.bbox);
   console.log(`${areas.length} parks and forests`);
-  // Smallest named area containing a point (a wilderness inside a national forest wins).
-  const areaAt = (lon: number, lat: number) => {
-    let best: Area | undefined;
+  const forests = [...new Set(areas.map((a) => a.name).filter((n) => /national (forest|park)|state park/i.test(n)))];
+  console.log(`  e.g. ${forests.slice(0, 25).join("; ")}`);
+  // All named areas containing a point, smallest first.
+  const areasAt = (lon: number, lat: number) => {
+    const hits: Area[] = [];
     for (const a of areas) {
-      if (best && a.area >= best.area) continue;
       const [w, s, e, n] = a.bbox ??= turf.bbox(a.shape);
       if (lon < w || lon > e || lat < s || lat > n) continue;
-      if (turf.booleanPointInPolygon([lon, lat], a.shape)) best = a;
+      if (turf.booleanPointInPolygon([lon, lat], a.shape)) hits.push(a);
     }
-    return best;
+    return hits.sort((x, y) => x.area - y.area);
   };
+  let noArea = 0;
+
   console.timeEnd("load");
   console.log(`${net.nodeCount} nodes, ${pois.length} features`);
   const idx = new PoiIndex(pois);
@@ -240,9 +243,12 @@ async function main() {
     features.forEach((f) => (counts[f.kind] = (counts[f.kind] ?? 0) + 1));
     const geometry = turf.cleanCoords(turf.simplify(line, { tolerance: 0.00002 })).geometry.coordinates.map(([x, y]: number[]) => [round(x, 6), round(y, 6)]);
     const mid = coords[Math.floor(coords.length / 2)];
-    const area = areaAt(mid[0], mid[1]) ?? areaAt(coords[0][0], coords[0][1]);
+    let inside = areasAt(mid[0], mid[1]);
+    if (!inside.length) inside = areasAt(coords[0][0], coords[0][1]);
+    if (!inside.length) noArea++;
+    const land = landFor(inside.map((a) => a.name));
     const summary: Summary = {
-      id, name: h.name, type: h.type, dest: h.dest ?? null, area: area?.name ?? null, camping: campingRule(area?.name) ?? null,
+      id, name: h.name, type: h.type, dest: h.dest ?? null, area: land.area, camping: land.rule,
       ...rest, counts, via: h.route.viaNames.slice(0, 4),
       parking: { name: h.parking.name ?? null, lon: round(h.parking.lon, 5), lat: round(h.parking.lat, 5) },
       bbox: turf.bbox(line).map((n) => round(n, 5)),
@@ -256,6 +262,7 @@ async function main() {
   await writeFile(path.join(outDir, "index.json"), JSON.stringify({ region: region.name, generated: new Date().toISOString(), trails: index }));
   await writeFile(path.join(outDir, "SAMPLE.md"), report(region.name, index, problems));
   console.log(`Wrote ${index.length} hikes to ${outDir}`);
+  console.log(`${noArea} hikes are outside any mapped park or forest`);
   if (problems.length) console.log("Problems:\n  " + problems.join("\n  "));
 }
 

@@ -44,17 +44,24 @@ export function areaFrom(f: Feature, t: Record<string, string>): Area | null {
   return { name: t.name, kind: t.protect_class ?? t.boundary ?? t.leisure ?? "", shape, area: turf.area(shape) };
 }
 
-/** General camping rules by land manager. Rules of thumb only; the app says to check before you go. */
-export function campingRule(areaName: string | undefined): string | undefined {
-  if (!areaName) return undefined;
-  const n = areaName.toLowerCase();
-  if (n.includes("shenandoah national park")) return "Shenandoah NP: backcountry camping needs a permit (recreation.gov); camp out of sight of trails, not at viewpoints or day-use areas.";
-  if (n.includes("blue ridge parkway")) return "Blue Ridge Parkway: camping only in designated campgrounds (fee).";
-  if (n.includes("wilderness")) return "Wilderness area (national forest): free dispersed camping; groups of 10 or fewer, no motorized gear.";
-  if (n.includes("national forest")) return "National forest: free dispersed camping in most areas (stay 200 ft from water and trails, 14-day limit). Developed campgrounds charge a fee.";
-  if (n.includes("state park")) return "State park: camping only in park campgrounds or designated backcountry sites; fee and reservations (reservevaparks.com).";
-  if (n.includes("state forest")) return "State forest: camping usually by permit or designated sites only.";
-  if (n.includes("wildlife management area")) return "Wildlife management area: primitive camping allowed in some WMAs with an access permit; check DWR rules.";
-  if (n.includes("national recreation area")) return "National recreation area: dispersed camping allowed in most areas; developed campgrounds charge a fee.";
-  return undefined;
+/** Camping rules by land manager, strictest first: a wilderness inside a national park follows the park's rules. */
+const RULES: [RegExp, string][] = [
+  [/shenandoah national park/i, "Shenandoah NP: backcountry camping needs a free permit (recreation.gov); camp out of sight of trails, not at viewpoints or day-use areas."],
+  [/national park/i, "National park: backcountry camping usually needs a permit."],
+  [/blue ridge parkway/i, "Blue Ridge Parkway: camping only in designated campgrounds (fee)."],
+  [/state park/i, "State park: camping only in park campgrounds or designated backcountry sites; fee and reservations (reservevaparks.com in VA)."],
+  [/state forest/i, "State forest: camping usually by permit or at designated sites only."],
+  [/wildlife management area/i, "Wildlife management area: primitive camping allowed in some WMAs with an access permit; check DWR rules."],
+  [/wilderness/i, "Wilderness area (national forest): free dispersed camping; groups of 10 or fewer, no motorized gear."],
+  [/national recreation area/i, "National recreation area (national forest): free dispersed camping in most areas; developed campgrounds charge a fee."],
+  [/national forest/i, "National forest: free dispersed camping in most areas (stay 200 ft from water and trails, 14-day limit). Developed campgrounds charge a fee."],
+];
+
+/** Picks the area name to show and its camping rule, given containing areas smallest first. */
+export function landFor(names: string[]): { area: string | null; rule: string | null } {
+  for (const [re, rule] of RULES) {
+    const hit = names.find((n) => re.test(n));
+    if (hit) return { area: hit, rule };
+  }
+  return { area: names[0] ?? null, rule: null };
 }

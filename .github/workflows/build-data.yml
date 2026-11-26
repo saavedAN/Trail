@@ -52,7 +52,7 @@ jobs:
         working-directory: osm
         run: |
           osmium merge virginia-latest.osm.pbf west-virginia-latest.osm.pbf -o merged.pbf --overwrite
-          osmium extract -s smart -b "$BBOX" merged.pbf -o box.pbf --overwrite
+          osmium extract -s smart -S types=multipolygon,boundary -b "$BBOX" merged.pbf -o box.pbf --overwrite
           osmium tags-filter box.pbf \
             w/highway=path,footway,track,bridleway,steps,cycleway,service,unclassified,tertiary,residential,secondary,primary \
             nwr/amenity=parking,shelter,drinking_water,toilets \
