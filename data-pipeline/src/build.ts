@@ -151,18 +151,40 @@ async function main() {
     .filter((p) => DEST_KINDS.includes(p.kind) && p.name && !curatedDest.has(p.name))
     .sort((a, b) => prio[a.kind] - prio[b.kind]);
   console.log(`${dests.length} named destinations`);
+  // Trailheads without a mapped lot: snapped trailhead nodes, then any trail/road junction.
+  const trailheadAt = new Map<number, Poi>();
+  for (const p of pois) {
+    if (p.kind !== "trailhead") continue;
+    const s = net.nearest(p.lon, p.lat, 150);
+    if (s) trailheadAt.set(s.node, p);
+  }
   const auto: Hike[] = [];
+  const skip: Record<string, number> = {};
+  const watch = /mcafee|dragon|tinker|sentinel|angel|cascade|old rag|whiteoak|dark hollow|humpback|crabtree/i;
+  const why = (d: Poi, r: string) => { skip[r] = (skip[r] ?? 0) + 1; if (watch.test(d.name!)) console.log(`  skip ${d.name}: ${r}`); };
   for (const d of dests) {
     const s = net.nearest(d.lon, d.lat, 150, true);
-    if (!s) continue;
-    const r = net.search(s.node, (n) => lotAt.has(n), MAX_ONE_WAY_M);
-    if (!r) continue;
+    if (!s) { why(d, "not near a trail"); continue; }
+    // Nearest place to start by walking: a lot, a mapped trailhead, or where the trail meets a road.
+    let r = net.search(s.node, (n) => lotAt.has(n) || trailheadAt.has(n) || net.isJunction(n), MAX_ONE_WAY_M);
+    if (!r) { why(d, "no road or lot within 8 miles"); continue; }
+    if (!lotAt.has(r.node)) {
+      // Prefer a real lot when one is only a little further.
+      const lotRoute = net.search(s.node, (n) => lotAt.has(n), r.cost + 800);
+      if (lotRoute) r = lotRoute;
+    }
     const route = toRoute(net, [...r.path].reverse(), [...r.edges].reverse());
     const m = route.trailM + route.roadM;
-    if (m < MIN_ONE_WAY_M || route.trailM < m * 0.6) continue;
-    const lot = lotAt.get(r.node)!;
-    auto.push({ id: "", name: d.name!, type: "out-and-back", dest: d.kind, route, parking: { name: lot.name, lon: lot.lon, lat: lot.lat } });
+    if (m < MIN_ONE_WAY_M) { why(d, "roadside (too short)"); continue; }
+    if (route.trailM < m * 0.6) { why(d, "mostly road walking"); continue; }
+    const lot = lotAt.get(r.node) ?? trailheadAt.get(r.node);
+    const parking = lot
+      ? { name: lot.name, lon: lot.lon, lat: lot.lat }
+      : { name: net.roadName(r.node) ? `Roadside parking, ${net.roadName(r.node)}` : "Roadside parking", lon: net.lon[r.node], lat: net.lat[r.node] };
+    auto.push({ id: "", name: d.name!, type: "out-and-back", dest: d.kind, route, parking });
+    if (watch.test(d.name!)) console.log(`  built ${d.name}: ${(m / 1609.34).toFixed(1)} mi one way from ${parking.name}`);
   }
+  console.log("Skipped destinations:", JSON.stringify(skip));
 
   // Drop a destination that sits on another hike from the same lot (it becomes a feature of that hike instead).
   // Waterfalls and peaks win over viewpoints; longer routes win over shorter ones.
@@ -172,6 +194,7 @@ async function main() {
     const end = h.route.coords.at(-1)!;
     const covered = kept.some((k) => k.parking.lon === h.parking.lon && k.parking.lat === h.parking.lat &&
       k.route.coords.some((c, i) => i % 3 === 0 && haversine(c[0], c[1], end[0], end[1]) < 120));
+    if (covered && watch.test(h.name)) console.log(`  ${h.name} is on another hike from the same lot`);
     const dupName = kept.some((k) => k.name === h.name && haversine(k.route.coords.at(-1)![0], k.route.coords.at(-1)![1], end[0], end[1]) < 2000);
     if (!covered && !dupName) kept.push(h);
   }

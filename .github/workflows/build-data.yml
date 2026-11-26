@@ -54,7 +54,7 @@ jobs:
           osmium merge virginia-latest.osm.pbf west-virginia-latest.osm.pbf -o merged.pbf --overwrite
           osmium extract -b "$BBOX" merged.pbf -o box.pbf --overwrite
           osmium tags-filter box.pbf \
-            w/highway=path,footway,track,bridleway,steps,cycleway,service,unclassified,tertiary \
+            w/highway=path,footway,track,bridleway,steps,cycleway,service,unclassified,tertiary,residential,secondary,primary \
             nwr/amenity=parking,shelter,drinking_water,toilets \
             nwr/tourism=camp_site,camp_pitch,wilderness_hut,alpine_hut,viewpoint,attraction \
             nwr/natural=peak,spring,cave_entrance,cliff,rock,arch \

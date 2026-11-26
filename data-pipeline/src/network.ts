@@ -1,6 +1,8 @@
 // Compact routable graph for a whole region (millions of nodes), built from osmium's GeoJSON export.
 // Nodes are merged by exact coordinate, which is how OSM ways share nodes.
 
+const BUSY = /^(residential|secondary|primary|secondary_link|primary_link)$/;
+
 export const TRAIL_HW = new Set(["path", "footway", "track", "bridleway", "steps", "cycleway"]);
 
 export class Network {
@@ -14,6 +16,7 @@ export class Network {
   private elen: number[] = [];
   private etrail: number[] = [];
   private ename: number[] = [];
+  private efactor: number[] = [];
   names: string[] = [""];
   private nameIndex = new Map<string, number>([["", 0]]);
   // CSR adjacency after finish().
@@ -29,6 +32,8 @@ export class Network {
     if (tags.access === "private" || tags.access === "no" || tags.foot === "no") return;
     if (tags.highway === "service" && /^(driveway|parking_aisle|drive-through|alley)$/.test(tags.service ?? "")) return;
     const isTrail = TRAIL_HW.has(tags.highway) ? 1 : 0;
+    // Trails cost their length; small roads a bit more; busy roads a lot more (walk them only to reach a trail).
+    const factor = isTrail ? 1 : BUSY.test(tags.highway) ? 3 : 1.5;
     const nm = this.nameId(tags.name ?? (tags.ref ? tags.ref : ""));
     let prev = this.node(coords[0]);
     for (let i = 1; i < coords.length; i++) {
@@ -36,7 +41,7 @@ export class Network {
       if (cur !== prev) {
         this.ea.push(prev); this.eb.push(cur);
         this.elen.push(haversine(this.lon[prev], this.lat[prev], this.lon[cur], this.lat[cur]));
-        this.etrail.push(isTrail); this.ename.push(nm);
+        this.etrail.push(isTrail); this.ename.push(nm); this.efactor.push(factor);
       }
       prev = cur;
     }
@@ -75,14 +80,13 @@ export class Network {
     this.trail = new Uint8Array(2 * m); this.edgeName = new Int32Array(2 * m);
     for (let e = 0; e < m; e++) {
       const a = this.ea[e], b = this.eb[e], l = this.elen[e], t = this.etrail[e];
-      // Roads cost more so routes stay on trails unless a road is the only way to a lot.
-      const wt = t ? l : l * 1.5;
+      const wt = l * this.efactor[e];
       for (const [u, v] of [[a, b], [b, a]]) {
         const k = fill[u]++;
         this.to[k] = v; this.w[k] = wt; this.len[k] = l; this.trail[k] = t; this.edgeName[k] = this.ename[e];
       }
     }
-    this.ea = []; this.eb = []; this.elen = []; this.etrail = []; this.ename = [];
+    this.ea = []; this.eb = []; this.elen = []; this.etrail = []; this.ename = []; this.efactor = [];
     for (let i = 0; i < n; i++) {
       if (this.off[i + 1] === this.off[i]) continue;
       const k = cellKey(this.lon[i], this.lat[i]);
@@ -106,6 +110,19 @@ export class Network {
     return best < 0 ? null : { node: best, m: bd };
   }
 
+  /** A node where a trail meets a road: a trailhead even when no parking lot is mapped. */
+  isJunction(i: number) {
+    let trail = false, road = false;
+    for (let k = this.off[i]; k < this.off[i + 1]; k++) { if (this.trail[k]) trail = true; else road = true; }
+    return trail && road;
+  }
+
+  /** Name of the first road at a node. */
+  roadName(i: number) {
+    for (let k = this.off[i]; k < this.off[i + 1]; k++) if (!this.trail[k] && this.names[this.edgeName[k]]) return this.names[this.edgeName[k]];
+    return "";
+  }
+
   touchesTrail(i: number) {
     for (let k = this.off[i]; k < this.off[i + 1]; k++) if (this.trail[k]) return true;
     return false;
@@ -115,7 +132,7 @@ export class Network {
    * Dijkstra from `src` until a node in `targets` is reached (or `maxM` of cost is exceeded).
    * Edges in `avoid` cost `penalty` times more (used to make loops return a different way).
    */
-  search(src: number, isTarget: (n: number) => boolean, maxM: number, avoid?: Set<number>, penalty = 4): { node: number; path: number[]; edges: number[] } | null {
+  search(src: number, isTarget: (n: number) => boolean, maxM: number, avoid?: Set<number>, penalty = 4): { node: number; cost: number; path: number[]; edges: number[] } | null {
     const dist = new Map<number, number>([[src, 0]]);
     const prev = new Map<number, number>();
     const prevEdge = new Map<number, number>();
@@ -127,7 +144,7 @@ export class Network {
       if (u !== src && isTarget(u)) {
         const path = [u], edges: number[] = [];
         for (let v = u; v !== src;) { edges.push(prevEdge.get(v)!); v = prev.get(v)!; path.push(v); }
-        return { node: u, path: path.reverse(), edges: edges.reverse() };
+        return { node: u, cost: d, path: path.reverse(), edges: edges.reverse() };
       }
       if (d > maxM) break;
       for (let k = this.off[u]; k < this.off[u + 1]; k++) {
