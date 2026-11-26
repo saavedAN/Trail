@@ -66,7 +66,7 @@ export function landFor(names: string[], onAT = false): { area: string | null; r
     if (hit) return { area: hit, rule };
   }
   // The AT corridor is often mapped only as scattered tracts; a hike that walks the AT follows its rules.
-  if (onAT) return { area: names[0] ?? "Appalachian Trail corridor", rule: RULES.find(([re]) => re.test("appalachian national scenic trail"))![1] };
+  if (onAT) return { area: "Appalachian Trail corridor", rule: RULES.find(([re]) => re.test("appalachian national scenic trail"))![1] };
   return { area: names[0] ?? null, rule: null };
 }
 

@@ -29,7 +29,7 @@ export function applyFilters(all: TrailSummary[], f: Filters, me: LonLat | null)
   const dist = (t: TrailSummary) => (me ? milesBetween(me, t.parking) : null);
   const rows = all
     .filter((t) => {
-      if (q && !norm(`${t.name} ${t.via.join(" ")} ${t.parking.name ?? ""}`).includes(q)) return false;
+      if (q && !norm(`${t.name} ${t.via.join(" ")} ${t.parking.name ?? ""} ${t.area ?? ""}`).includes(q)) return false;
       if (f.difficulty.size && !f.difficulty.has(t.difficultySimple)) return false;
       if (f.maxLength && t.lengthMi > f.maxLength) return false;
       if (f.maxGain && t.gainFt > f.maxGain) return false;

@@ -298,7 +298,10 @@ function namedTrailHikes(net: Network, lotAt: Map<number, Poi>, trailheadAt: Map
       const v = net.to[k];
       if (v < u || !net.trail[k] || !net.edgeName[k]) continue;
       const nm = net.edgeName[k];
-      if (/^appalachian (national scenic )?trail$/i.test(net.names[nm])) continue;
+      const nmText = net.names[nm];
+      if (/^appalachian (national scenic )?trail$/i.test(nmText)) continue;
+      // Real trails only: skip named farm lanes, fire roads and streets that happen to be tracks.
+      if (!/trail|loop|path|greenway|walk|\btr\b/i.test(nmText)) continue;
       let a = byName.get(nm);
       if (!a) byName.set(nm, (a = []));
       a.push(u, v, k);
